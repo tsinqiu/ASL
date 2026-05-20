@@ -89,6 +89,29 @@ For cached training, make sure cache files exist for the rows that training and 
 python scripts\build_feature_cache.py --csv outputs\first_place_valid_fold0.csv --cache-dir C:\ASL\islr_feature_cache_fp16 --max-samples 640
 ```
 
+## Baseline Evaluation
+
+Current comparable baseline:
+
+- Tiny cached baseline
+- fold0
+- 5 epochs
+- best valid accuracy around 0.426
+
+Run full validation split evaluation manually:
+
+```powershell
+python src\evaluate.py --config configs\tiny_baseline_cached.json --checkpoint outputs\baseline_cached_tiny_fold0_best.pt --split valid
+```
+
+Plot training curves manually:
+
+```powershell
+python scripts\plot_training_curves.py --csv outputs\baseline_cached_metrics.csv
+```
+
+`evaluate.py` does not train; it only loads a checkpoint and evaluates it. `plot_training_curves.py` only reads the metrics CSV and writes PNG figures. If `outputs\baseline_cached_metrics.csv` does not exist yet, rerun `train_baseline.py` manually once to generate it.
+
 You can override the dataset location:
 
 ```powershell
@@ -122,6 +145,11 @@ python src/train_baseline.py --config configs/tiny_baseline.json
 - `outputs/baseline_train_log.txt`
 - `outputs/baseline_tiny_fold0_best.pt`
 - `outputs/baseline_tiny_fold0_last.pt`
+- `outputs/baseline_cached_metrics.csv`
+- `outputs/eval_tiny_baseline_valid.json`
+- `outputs/eval_tiny_baseline_per_class.csv`
+- `outputs/figures/tiny_baseline_loss_curve.png`
+- `outputs/figures/tiny_baseline_acc_curve.png`
 - `outputs/cache_metadata.csv`
 
 ## Scope
@@ -139,6 +167,7 @@ Included:
 - Config-driven fold0 tiny baseline training with best-checkpoint saving
 - Small trial-training limits in `configs/tiny_baseline.json` for quick baseline checks
 - Optional `.npy` first-place feature cache and cached Dataset/DataLoader
+- Baseline evaluation JSON, per-class CSV, and training curve plotting utilities
 
 Not included yet:
 

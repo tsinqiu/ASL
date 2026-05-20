@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import random
 import time
@@ -19,6 +20,17 @@ from train_smoke import count_parameters, resolve_device
 
 
 DEFAULT_CONFIG = Path("configs") / "tiny_baseline.json"
+DEFAULT_METRICS_CSV_PATH = Path("outputs") / "baseline_cached_metrics.csv"
+METRICS_CSV_FIELDS = (
+    "epoch",
+    "train_loss",
+    "train_acc",
+    "valid_loss",
+    "valid_acc",
+    "elapsed_sec",
+    "is_best",
+    "lr",
+)
 
 
 def add(lines: list[str], text: str = "") -> None:
@@ -31,6 +43,19 @@ def load_config(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as f:
         config = json.load(f)
     return config
+
+
+def initialize_metrics_csv(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=METRICS_CSV_FIELDS)
+        writer.writeheader()
+
+
+def append_metrics_csv(path: Path, row: dict[str, Any]) -> None:
+    with path.open("a", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=METRICS_CSV_FIELDS)
+        writer.writerow(row)
 
 
 def apply_overrides(config: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
@@ -270,6 +295,7 @@ def main() -> None:
     max_train_batches = int(config.get("max_train_batches", 0) or 0)
     max_valid_batches = int(config.get("max_valid_batches", 0) or 0)
     dataset_mode = str(config.get("dataset_mode", "online"))
+    metrics_csv_path = Path(config.get("metrics_csv_path") or DEFAULT_METRICS_CSV_PATH)
 
     if dataset_mode == "cache":
         cache_dir = Path(config["cache_dir"])
@@ -338,6 +364,7 @@ def main() -> None:
     add(log_lines, f"num_workers: {num_workers}")
     add(log_lines, f"lr: {config['lr']}")
     add(log_lines, f"weight_decay: {config['weight_decay']}")
+    add(log_lines, f"metrics_csv_path: {metrics_csv_path}")
     add(log_lines, f"model param count: {param_count}")
     add(log_lines, f"train samples: {len(train_dataset)}")
     add(log_lines, f"valid samples: {len(valid_dataset)}")
@@ -350,6 +377,7 @@ def main() -> None:
     train_logits_shape: tuple[int, ...] | None = None
     valid_batch_shape: tuple[int, ...] | None = None
     valid_logits_shape: tuple[int, ...] | None = None
+    initialize_metrics_csv(metrics_csv_path)
 
     for epoch in range(1, int(config["epochs"]) + 1):
         start_time = time.time()
@@ -411,6 +439,19 @@ def main() -> None:
             f"valid_loss={valid_loss:.6f} valid_acc={valid_acc:.6f} "
             f"elapsed_sec={elapsed:.1f} best={is_best}",
         )
+        append_metrics_csv(
+            metrics_csv_path,
+            {
+                "epoch": epoch,
+                "train_loss": train_loss,
+                "train_acc": train_acc,
+                "valid_loss": valid_loss,
+                "valid_acc": valid_acc,
+                "elapsed_sec": elapsed,
+                "is_best": is_best,
+                "lr": optimizer.param_groups[0]["lr"],
+            },
+        )
         print(log_lines[-1], flush=True)
 
     add(log_lines)
@@ -423,6 +464,7 @@ def main() -> None:
     add(log_lines, f"best valid accuracy: {best_metrics.get('valid_accuracy', 0.0):.6f}")
     add(log_lines, f"best checkpoint: {Path(config['best_checkpoint_path']).resolve()}")
     add(log_lines, f"last checkpoint: {Path(config['last_checkpoint_path']).resolve()}")
+    add(log_lines, f"metrics csv: {metrics_csv_path.resolve()}")
 
     log_path = Path(config["log_path"])
     log_path.parent.mkdir(parents=True, exist_ok=True)

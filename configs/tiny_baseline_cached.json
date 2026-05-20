@@ -28,6 +28,7 @@
     "dropout": 0.1
   },
   "log_path": "outputs/baseline_cached_train_log.txt",
+  "metrics_csv_path": "outputs/baseline_cached_metrics.csv",
   "best_checkpoint_path": "outputs/baseline_cached_tiny_fold0_best.pt",
   "last_checkpoint_path": "outputs/baseline_cached_tiny_fold0_last.pt"
 }
