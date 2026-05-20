@@ -112,6 +112,55 @@ python scripts\plot_training_curves.py --csv outputs\baseline_cached_metrics.csv
 
 `evaluate.py` does not train; it only loads a checkpoint and evaluates it. `plot_training_curves.py` only reads the metrics CSV and writes PNG figures. If `outputs\baseline_cached_metrics.csv` does not exist yet, rerun `train_baseline.py` manually once to generate it.
 
+## Small Baseline
+
+Small baseline is the next upgrade after the Tiny cached baseline. It stays within a locally trainable size while moving closer to the first-place 1DCNN + Transformer structure:
+
+- More Conv1D blocks
+- Two Conv + Transformer stages
+- Larger `d_model`
+- Still no AWP, SWA, Snapshot, ensemble, or TFLite export
+
+Tiny baseline reference result:
+
+- top1 around 0.426
+- top5 around 0.675
+
+Small baseline goal:
+
+- Check whether the larger backbone improves valid top1 / top5 over Tiny.
+
+The first Small run used the `small_cached` output prefix. The current Small config now points to the v2 training recipe below.
+
+### Small Baseline v2
+
+Small baseline v2 keeps `SmallISLRModel` unchanged and only adjusts training strategy:
+
+- `label_smoothing = 0.1`
+- `CosineAnnealingLR`
+- best checkpoint selected by `valid_acc`
+- new output prefix: `small_cosine_ls`
+
+The goal is to reduce overfitting in the Small model and move closer to the first-place cosine decay plus regularized training recipe, without adding AWP, SWA, Snapshot, ensemble, or TFLite export.
+
+Train manually:
+
+```powershell
+python src\train_baseline.py --config configs\small_baseline_cached.json
+```
+
+Plot curves manually:
+
+```powershell
+python scripts\plot_training_curves.py --csv outputs\small_cosine_ls_metrics.csv
+```
+
+Evaluate manually:
+
+```powershell
+python src\evaluate.py --config configs\small_baseline_cached.json --checkpoint outputs\small_cosine_ls_fold0_best.pt --split valid
+```
+
 You can override the dataset location:
 
 ```powershell
@@ -150,6 +199,14 @@ python src/train_baseline.py --config configs/tiny_baseline.json
 - `outputs/eval_tiny_baseline_per_class.csv`
 - `outputs/figures/tiny_baseline_loss_curve.png`
 - `outputs/figures/tiny_baseline_acc_curve.png`
+- `outputs/small_cached_train_log.txt`
+- `outputs/small_cached_metrics.csv`
+- `outputs/small_cached_fold0_best.pt`
+- `outputs/small_cached_fold0_last.pt`
+- `outputs/small_cosine_ls_train_log.txt`
+- `outputs/small_cosine_ls_metrics.csv`
+- `outputs/small_cosine_ls_fold0_best.pt`
+- `outputs/small_cosine_ls_fold0_last.pt`
 - `outputs/cache_metadata.csv`
 
 ## Scope
@@ -168,6 +225,8 @@ Included:
 - Small trial-training limits in `configs/tiny_baseline.json` for quick baseline checks
 - Optional `.npy` first-place feature cache and cached Dataset/DataLoader
 - Baseline evaluation JSON, per-class CSV, and training curve plotting utilities
+- Small 1DCNN + Transformer cached baseline config and model
+- Small baseline v2 training strategy with label smoothing, cosine LR decay, and best-by-accuracy checkpointing
 
 Not included yet:
 

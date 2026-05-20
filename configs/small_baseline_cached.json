@@ -1,0 +1,42 @@
+{
+  "data_root": "C:\\ASL\\asl-signs",
+  "fold": 0,
+  "model_name": "small",
+  "dataset_mode": "cache",
+  "cache_dir": "C:\\ASL\\islr_feature_cache_fp16",
+  "filter_missing_cache": true,
+  "train_csv": "outputs/first_place_train_fold0.csv",
+  "valid_csv": "outputs/first_place_valid_fold0.csv",
+  "center_mode": "notebook_strict",
+  "seed": 123,
+  "device": "auto",
+  "epochs": 20,
+  "batch_size": 128,
+  "max_train_batches": 0,
+  "max_valid_batches": 0,
+  "max_frames": 64,
+  "num_workers": 0,
+  "lr": 0.0005,
+  "weight_decay": 0.01,
+  "label_smoothing": 0.1,
+  "best_metric": "valid_acc",
+  "best_mode": "max",
+  "scheduler": {
+    "name": "cosine",
+    "t_max": 20,
+    "eta_min": 0.00001
+  },
+  "grad_clip_norm": 1.0,
+  "use_amp": true,
+  "model": {
+    "input_dim": 708,
+    "num_classes": 250,
+    "d_model": 192,
+    "nhead": 4,
+    "dropout": 0.15
+  },
+  "log_path": "outputs/small_cosine_ls_train_log.txt",
+  "metrics_csv_path": "outputs/small_cosine_ls_metrics.csv",
+  "best_checkpoint_path": "outputs/small_cosine_ls_fold0_best.pt",
+  "last_checkpoint_path": "outputs/small_cosine_ls_fold0_last.pt"
+}

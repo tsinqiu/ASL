@@ -12,8 +12,7 @@ from torch.utils.data import DataLoader
 
 from cached_dataset import CachedISLRDataset
 from first_place_preprocess import FirstPlaceISLRDataset
-from model_tiny import TinyISLRModel
-from train_baseline import load_config, move_batch_to_device
+from train_baseline import build_model, load_config, move_batch_to_device
 from train_smoke import resolve_device
 
 
@@ -25,7 +24,7 @@ PER_CLASS_FIELDS = ("label", "sign", "support", "correct_top1", "top1_accuracy")
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Evaluate a trained TinyISLRModel checkpoint.")
+    parser = argparse.ArgumentParser(description="Evaluate a trained ISLR baseline checkpoint.")
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--checkpoint", type=Path, default=DEFAULT_CHECKPOINT)
     parser.add_argument("--split", choices=("train", "valid"), default="valid")
@@ -81,7 +80,7 @@ def make_loader(
     )
 
 
-def load_checkpoint_model(checkpoint_path: Path, config: dict[str, Any], device: torch.device) -> TinyISLRModel:
+def load_checkpoint_model(checkpoint_path: Path, config: dict[str, Any], device: torch.device) -> nn.Module:
     if not checkpoint_path.exists():
         raise FileNotFoundError(
             f"Checkpoint file not found: {checkpoint_path}. "
@@ -92,14 +91,14 @@ def load_checkpoint_model(checkpoint_path: Path, config: dict[str, Any], device:
     if "model_state_dict" not in checkpoint:
         raise KeyError(f"Checkpoint is missing 'model_state_dict': {checkpoint_path}")
 
-    model = TinyISLRModel(**config["model"]).to(device)
+    model = build_model(config).to(device)
     model.load_state_dict(checkpoint["model_state_dict"])
     return model
 
 
 @torch.no_grad()
 def evaluate_model(
-    model: TinyISLRModel,
+    model: nn.Module,
     loader: DataLoader,
     criterion: nn.Module,
     device: torch.device,

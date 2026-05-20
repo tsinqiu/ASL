@@ -15,6 +15,7 @@ from torch.utils.data import DataLoader
 
 from cached_dataset import CachedISLRDataset
 from first_place_preprocess import CENTER_MODES, FirstPlaceISLRDataset
+from model_small import SmallISLRModel
 from model_tiny import TinyISLRModel
 from train_smoke import count_parameters, resolve_device
 
@@ -108,6 +109,24 @@ def validate_config(config: dict[str, Any]) -> None:
         raise ValueError("dataset_mode must be either 'online' or 'cache'")
     if dataset_mode == "cache" and not config.get("cache_dir"):
         raise ValueError("cache_dir is required when dataset_mode='cache'")
+    best_metric = str(config.get("best_metric", "valid_loss"))
+    best_mode = str(config.get("best_mode", "min"))
+    if best_metric not in {"valid_loss", "valid_acc"}:
+        raise ValueError("best_metric must be either 'valid_loss' or 'valid_acc'")
+    if best_mode not in {"min", "max"}:
+        raise ValueError("best_mode must be either 'min' or 'max'")
+    label_smoothing = float(config.get("label_smoothing", 0.0))
+    if not 0.0 <= label_smoothing < 1.0:
+        raise ValueError("label_smoothing must be in [0.0, 1.0)")
+    scheduler_config = config.get("scheduler", {"name": "none"}) or {"name": "none"}
+    scheduler_name = str(scheduler_config.get("name", "none")).lower()
+    if scheduler_name not in {"none", "cosine"}:
+        raise ValueError("scheduler.name must be either 'none' or 'cosine'")
+    if scheduler_name == "cosine":
+        if int(scheduler_config.get("t_max", 0)) <= 0:
+            raise ValueError("scheduler.t_max must be positive when scheduler.name='cosine'")
+        if float(scheduler_config.get("eta_min", 0.0)) < 0.0:
+            raise ValueError("scheduler.eta_min must be non-negative")
 
 
 def set_seed(seed: int) -> None:
@@ -142,8 +161,48 @@ def make_loader(
     )
 
 
+def build_model(config: dict[str, Any]) -> nn.Module:
+    model_name = str(config.get("model_name", "tiny")).lower()
+    if model_name == "tiny":
+        return TinyISLRModel(**config["model"])
+    if model_name == "small":
+        return SmallISLRModel(**config["model"])
+    raise ValueError("model_name must be either 'tiny' or 'small'")
+
+
+def build_scheduler(
+    optimizer: torch.optim.Optimizer,
+    config: dict[str, Any],
+) -> Any | None:
+    scheduler_config = config.get("scheduler", {"name": "none"}) or {"name": "none"}
+    scheduler_name = str(scheduler_config.get("name", "none")).lower()
+    if scheduler_name == "none":
+        return None
+    if scheduler_name == "cosine":
+        return torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=int(scheduler_config["t_max"]),
+            eta_min=float(scheduler_config.get("eta_min", 0.0)),
+        )
+    raise ValueError("scheduler.name must be either 'none' or 'cosine'")
+
+
+def get_current_lr(optimizer: torch.optim.Optimizer) -> float:
+    return float(optimizer.param_groups[0]["lr"])
+
+
+def is_better_metric(current: float, best: float | None, mode: str) -> bool:
+    if best is None:
+        return True
+    if mode == "min":
+        return current < best
+    if mode == "max":
+        return current > best
+    raise ValueError("best_mode must be either 'min' or 'max'")
+
+
 def train_one_epoch(
-    model: TinyISLRModel,
+    model: nn.Module,
     loader: DataLoader,
     criterion: nn.Module,
     optimizer: torch.optim.Optimizer,
@@ -195,7 +254,7 @@ def train_one_epoch(
 
 @torch.no_grad()
 def validate_one_epoch(
-    model: TinyISLRModel,
+    model: nn.Module,
     loader: DataLoader,
     criterion: nn.Module,
     device: torch.device,
@@ -235,7 +294,7 @@ def validate_one_epoch(
 
 def save_checkpoint(
     path: Path,
-    model: TinyISLRModel,
+    model: nn.Module,
     optimizer: torch.optim.Optimizer,
     scaler: torch.amp.GradScaler,
     config: dict[str, Any],
@@ -259,7 +318,7 @@ def save_checkpoint(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train tiny single-fold ISLR baseline from JSON config.")
+    parser = argparse.ArgumentParser(description="Train a single-fold ISLR baseline from JSON config.")
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--data-root", type=Path, default=None)
     parser.add_argument("--epochs", type=int, default=None)
@@ -296,6 +355,11 @@ def main() -> None:
     max_valid_batches = int(config.get("max_valid_batches", 0) or 0)
     dataset_mode = str(config.get("dataset_mode", "online"))
     metrics_csv_path = Path(config.get("metrics_csv_path") or DEFAULT_METRICS_CSV_PATH)
+    best_metric = str(config.get("best_metric", "valid_loss"))
+    best_mode = str(config.get("best_mode", "min"))
+    label_smoothing = float(config.get("label_smoothing", 0.0))
+    scheduler_config = config.get("scheduler", {"name": "none"}) or {"name": "none"}
+    scheduler_name = str(scheduler_config.get("name", "none")).lower()
 
     if dataset_mode == "cache":
         cache_dir = Path(config["cache_dir"])
@@ -333,23 +397,26 @@ def main() -> None:
     train_loader = make_loader(train_dataset, batch_size, shuffle=True, num_workers=num_workers, device=device)
     valid_loader = make_loader(valid_dataset, batch_size, shuffle=False, num_workers=num_workers, device=device)
 
-    model = TinyISLRModel(**config["model"]).to(device)
-    criterion = nn.CrossEntropyLoss()
+    model_name = str(config.get("model_name", "tiny")).lower()
+    model = build_model(config).to(device)
+    criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=float(config["lr"]),
         weight_decay=float(config["weight_decay"]),
     )
+    scheduler = build_scheduler(optimizer, config)
     scaler = torch.amp.GradScaler(enabled=use_amp)
     param_count = count_parameters(model)
 
     log_lines: list[str] = []
-    add(log_lines, "Tiny ISLR Baseline Training")
-    add(log_lines, "=" * 27)
+    add(log_lines, f"{model_name.title()} ISLR Baseline Training")
+    add(log_lines, "=" * (len(log_lines[-1]) if log_lines else 28))
     add(log_lines, f"config: {args.config.resolve()}")
     add(log_lines, f"device: {device}")
     add(log_lines, f"torch.cuda.is_available(): {torch.cuda.is_available()}")
     add(log_lines, f"use_amp: {use_amp}")
+    add(log_lines, f"model_name: {model_name}")
     add(log_lines, f"dataset_mode: {dataset_mode}")
     if dataset_mode == "cache":
         add(log_lines, f"cache_dir: {Path(config['cache_dir'])}")
@@ -364,13 +431,20 @@ def main() -> None:
     add(log_lines, f"num_workers: {num_workers}")
     add(log_lines, f"lr: {config['lr']}")
     add(log_lines, f"weight_decay: {config['weight_decay']}")
+    add(log_lines, f"label_smoothing: {label_smoothing}")
+    add(log_lines, f"scheduler: {scheduler_name}")
+    if scheduler_name == "cosine":
+        add(log_lines, f"scheduler_t_max: {int(scheduler_config['t_max'])}")
+        add(log_lines, f"scheduler_eta_min: {float(scheduler_config.get('eta_min', 0.0))}")
+    add(log_lines, f"best_metric: {best_metric}")
+    add(log_lines, f"best_mode: {best_mode}")
     add(log_lines, f"metrics_csv_path: {metrics_csv_path}")
     add(log_lines, f"model param count: {param_count}")
     add(log_lines, f"train samples: {len(train_dataset)}")
     add(log_lines, f"valid samples: {len(valid_dataset)}")
     add(log_lines)
 
-    best_valid_loss = float("inf")
+    best_metric_value: float | None = None
     best_epoch = -1
     best_metrics: dict[str, float] = {}
     train_batch_shape: tuple[int, ...] | None = None
@@ -381,6 +455,7 @@ def main() -> None:
 
     for epoch in range(1, int(config["epochs"]) + 1):
         start_time = time.time()
+        lr = get_current_lr(optimizer)
         train_loss, train_acc, train_batch_shape, train_logits_shape = train_one_epoch(
             model,
             train_loader,
@@ -403,13 +478,16 @@ def main() -> None:
         elapsed = time.time() - start_time
         metrics = {
             "train_loss": train_loss,
+            "train_acc": train_acc,
             "train_accuracy": train_acc,
             "valid_loss": valid_loss,
+            "valid_acc": valid_acc,
             "valid_accuracy": valid_acc,
         }
-        is_best = valid_loss < best_valid_loss
+        current_best_metric_value = float(metrics[best_metric])
+        is_best = is_better_metric(current_best_metric_value, best_metric_value, best_mode)
         if is_best:
-            best_valid_loss = valid_loss
+            best_metric_value = current_best_metric_value
             best_epoch = epoch
             best_metrics = metrics
             save_checkpoint(
@@ -422,6 +500,9 @@ def main() -> None:
                 metrics,
                 param_count,
             )
+
+        if scheduler is not None:
+            scheduler.step()
 
         save_checkpoint(
             Path(config["last_checkpoint_path"]),
@@ -437,7 +518,9 @@ def main() -> None:
             log_lines,
             f"epoch {epoch}: train_loss={train_loss:.6f} train_acc={train_acc:.6f} "
             f"valid_loss={valid_loss:.6f} valid_acc={valid_acc:.6f} "
-            f"elapsed_sec={elapsed:.1f} best={is_best}",
+            f"lr={lr:.8f} elapsed_sec={elapsed:.1f} "
+            f"best_metric={best_metric} best_metric_value={current_best_metric_value:.6f} "
+            f"best={is_best}",
         )
         append_metrics_csv(
             metrics_csv_path,
@@ -449,7 +532,7 @@ def main() -> None:
                 "valid_acc": valid_acc,
                 "elapsed_sec": elapsed,
                 "is_best": is_best,
-                "lr": optimizer.param_groups[0]["lr"],
+                "lr": lr,
             },
         )
         print(log_lines[-1], flush=True)
@@ -460,7 +543,10 @@ def main() -> None:
     add(log_lines, f"valid batch shape: {valid_batch_shape}")
     add(log_lines, f"valid logits shape: {valid_logits_shape}")
     add(log_lines, f"best epoch: {best_epoch}")
-    add(log_lines, f"best valid loss: {best_valid_loss:.6f}")
+    add(log_lines, f"best metric: {best_metric}")
+    add(log_lines, f"best mode: {best_mode}")
+    add(log_lines, f"best metric value: {(best_metric_value if best_metric_value is not None else 0.0):.6f}")
+    add(log_lines, f"best valid loss: {best_metrics.get('valid_loss', 0.0):.6f}")
     add(log_lines, f"best valid accuracy: {best_metrics.get('valid_accuracy', 0.0):.6f}")
     add(log_lines, f"best checkpoint: {Path(config['best_checkpoint_path']).resolve()}")
     add(log_lines, f"last checkpoint: {Path(config['last_checkpoint_path']).resolve()}")
