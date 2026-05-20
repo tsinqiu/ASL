@@ -1,0 +1,61 @@
+# Python cache / build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE / editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local environment files
+.env
+.env.*
+
+# Generated project outputs
+outputs/
+
+# Model checkpoints and exported weights
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.tflite
+
+# Large data and feature cache
+asl-signs/
+islr_feature_cache*/
+feature_cache*/
+*.npy
+*.npz
+
+# Kaggle downloads / archives
+*.zip
+*.tar
+*.tar.gz
+*.7z
+
+# Logs and temporary files
+*.log
+tmp/
+temp/
+.tmp/
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store
