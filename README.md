@@ -185,6 +185,52 @@ Evaluate manually:
 python src\evaluate.py --config configs\small_v2_maxlen128_aug_cached.json --checkpoint outputs\small_v2_len128_aug_fold0_best.pt --split valid
 ```
 
+## ONNX Export
+
+Current recommended deployment model:
+
+- checkpoint: `outputs/small_v2_len128_aug_fold0_best.pt`
+- config: `configs/small_v2_maxlen128_aug_cached.json`
+- valid top1: around `0.5569`
+- valid top5: around `0.7611`
+
+Install export/check dependencies in the PC virtual environment if needed:
+
+```powershell
+python -m pip install onnx onnxruntime
+```
+
+Export ONNX manually on the training branch:
+
+```powershell
+python scripts\export_onnx.py --config configs\small_v2_maxlen128_aug_cached.json --checkpoint outputs\small_v2_len128_aug_fold0_best.pt --output raspi_deploy\model.onnx
+```
+
+Check the exported ONNX manually on the PC:
+
+```powershell
+python scripts\check_onnx.py --onnx raspi_deploy\model.onnx --max-len 128 --input-dim 708
+```
+
+Optional PyTorch vs ONNX dummy-output comparison:
+
+```powershell
+python scripts\check_onnx.py --onnx raspi_deploy\model.onnx --max-len 128 --input-dim 708 --config configs\small_v2_maxlen128_aug_cached.json --checkpoint outputs\small_v2_len128_aug_fold0_best.pt --compare-pytorch
+```
+
+After export:
+
+1. Confirm `raspi_deploy\model.onnx` exists.
+2. Switch to the deployment branch:
+
+```powershell
+git checkout deploy/raspi-clean
+```
+
+3. Copy the exported ONNX file into that branch's `raspi_deploy\model.onnx`.
+4. Do not commit `.pt` checkpoints to the deployment branch.
+5. Raspberry Pi deployment uses only `model.onnx`.
+
 You can override the dataset location:
 
 ```powershell
