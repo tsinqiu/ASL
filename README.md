@@ -1,8 +1,13 @@
-# Kaggle ISLR Reproduction
+# ASL Isolated Sign Recognition
 
-Current stage: Kaggle ISLR Dataset / DataLoader pipeline.
+This repository contains an ASL isolated sign recognition project built around
+landmark-based sequence classification. It includes data checks, participant
+splitting, feature preprocessing, cached feature training, evaluation utilities,
+PC webcam inference, ONNX export, and Raspberry Pi deployment preparation.
 
-This repository checks the dataset, creates participant-based folds, reads parquet landmark files, verifies PyTorch `Dataset` / `DataLoader` batches, and includes a tiny smoke-training baseline. The smoke training is only a short pipeline check, not formal model training.
+The model recognizes ASL isolated signs. Chinese text, when shown, is only a
+display-time meaning for the English ASL label. It is not Chinese Sign Language
+recognition, and it is not continuous sign language translation.
 
 ## Data
 
@@ -12,7 +17,8 @@ Default data path:
 C:\ASL\asl-signs
 ```
 
-The large Kaggle dataset is not copied into this project. Scripts read it through `--data-root`, which defaults to `C:\ASL\asl-signs`.
+Large source data files are not copied into this repository. Scripts read them
+through `--data-root`, which defaults to `C:\ASL\asl-signs`.
 
 ## Setup
 
@@ -23,13 +29,12 @@ python -m pip install --upgrade pip
 python -m pip install pandas numpy pyarrow scikit-learn tqdm
 ```
 
-Install GPU PyTorch separately with the official CUDA 11.8 wheel index:
+Install GPU PyTorch separately with the CUDA wheel index that matches the local
+machine:
 
 ```powershell
 python -m pip install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu118
 ```
-
-PyTorch CUDA wheels require a separate `--index-url`, so `torch`, `torchvision`, and `torchaudio` are intentionally not listed in `requirements.txt`.
 
 Environment check:
 
@@ -37,7 +42,7 @@ Environment check:
 python -c "import sys, torch; print('python:', sys.version); print('torch:', torch.__version__); print('cuda available:', torch.cuda.is_available()); print('torch cuda:', torch.version.cuda); print('gpu:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU only')"
 ```
 
-## Commands
+## Common Commands
 
 ```powershell
 python scripts/check_dataset.py
@@ -45,36 +50,38 @@ python scripts/inspect_sample.py --index 0
 python src/preprocess.py --index 0
 python src/split.py --data-root C:\ASL\asl-signs --n-splits 5
 python scripts/check_dataloader.py --data-root C:\ASL\asl-signs --fold 0 --batch-size 8
-python scripts/check_first_place_preprocess.py --data-root C:\ASL\asl-signs --fold 0 --batch-size 8
 python -m unittest tests.test_model_tiny -v
 python src/train_smoke.py --data-root C:\ASL\asl-signs --fold 0 --batch-size 16 --max-train-batches 20 --max-valid-batches 5 --epochs 1
 python src/train_baseline.py --config configs/tiny_baseline.json
 ```
 
-`configs/tiny_baseline.json` is currently a small trial-training config, not a full formal training run. It defaults to `epochs=1`, `max_train_batches=100`, and `max_valid_batches=20` so you can verify that train loss, valid loss, valid accuracy, and best/last checkpoint saving work before committing to a full fold run.
+`configs/tiny_baseline.json` is a small trial-training config. It is useful for
+checking the training loop, validation loop, metric logging, and checkpoint
+saving before running longer experiments.
 
 ## Feature Cache
 
-Online first-place preprocessing reads parquet files and computes `[64, 708]` features on the fly. For faster repeated experiments, you can manually build a `.npy` feature cache.
+The runtime feature format is `[max_len, 708]`, based on selected face, hand,
+nose, and eye landmarks with `x,y + dx + dx2` features. Cached `.npy` features
+make repeated training experiments faster.
 
 Small cache build test:
 
 ```powershell
-python scripts\build_feature_cache.py --csv outputs\first_place_train_fold0.csv --cache-dir C:\ASL\islr_feature_cache_fp16 --max-samples 1000
+python scripts\build_feature_cache.py --csv outputs\train_fold0.csv --cache-dir C:\ASL\islr_feature_cache_fp16 --max-samples 1000
 ```
-
-This writes feature files named `{participant_id}_{sequence_id}.npy` and a metadata table at `outputs/cache_metadata.csv`.
 
 Check cached DataLoader:
 
 ```powershell
-python scripts\check_cached_dataloader.py --csv outputs\first_place_train_fold0.csv --cache-dir C:\ASL\islr_feature_cache_fp16 --batch-size 32
+python scripts\check_cached_dataloader.py --csv outputs\train_fold0.csv --cache-dir C:\ASL\islr_feature_cache_fp16 --batch-size 32
 ```
 
-If you built only a partial cache and want the check to report the usable cached subset, add:
+If you built only a partial cache and want the check to report the usable cached
+subset, add:
 
 ```powershell
-python scripts\check_cached_dataloader.py --csv outputs\first_place_train_fold0.csv --cache-dir C:\ASL\islr_feature_cache_fp16 --batch-size 32 --filter-missing-cache
+python scripts\check_cached_dataloader.py --csv outputs\train_fold0.csv --cache-dir C:\ASL\islr_feature_cache_fp16 --batch-size 32 --filter-missing-cache
 ```
 
 Use cached features for the tiny baseline:
@@ -83,20 +90,13 @@ Use cached features for the tiny baseline:
 python src\train_baseline.py --config configs\tiny_baseline_cached.json
 ```
 
-For cached training, make sure cache files exist for the rows that training and validation will read. The 1000-row cache command above is intended as a small cache test. `configs/tiny_baseline_cached.json` uses `filter_missing_cache=true`, so it will train only on rows that already have `.npy` files. If validation has no cached rows, build cache for the valid CSV too:
-
-```powershell
-python scripts\build_feature_cache.py --csv outputs\first_place_valid_fold0.csv --cache-dir C:\ASL\islr_feature_cache_fp16 --max-samples 640
-```
-
 ## Baseline Evaluation
 
-Current comparable baseline:
+Current comparable tiny baseline:
 
-- Tiny cached baseline
 - fold0
-- 5 epochs
-- best valid accuracy around 0.426
+- cached features
+- best valid accuracy around `0.426`
 
 Run full validation split evaluation manually:
 
@@ -110,38 +110,26 @@ Plot training curves manually:
 python scripts\plot_training_curves.py --csv outputs\baseline_cached_metrics.csv
 ```
 
-`evaluate.py` does not train; it only loads a checkpoint and evaluates it. `plot_training_curves.py` only reads the metrics CSV and writes PNG figures. If `outputs\baseline_cached_metrics.csv` does not exist yet, rerun `train_baseline.py` manually once to generate it.
+`evaluate.py` does not train; it only loads a checkpoint and evaluates it.
+`plot_training_curves.py` only reads a metrics CSV and writes PNG figures.
 
-## Small Baseline
+## Small Model Experiments
 
-Small baseline is the next upgrade after the Tiny cached baseline. It stays within a locally trainable size while moving closer to the first-place 1DCNN + Transformer structure:
-
-- More Conv1D blocks
-- Two Conv + Transformer stages
-- Larger `d_model`
-- Still no AWP, SWA, Snapshot, ensemble, or TFLite export
+The Small model is the main local training target after the Tiny baseline. It
+uses a compact Conv1D + Transformer sequence classifier while remaining practical
+for local training.
 
 Tiny baseline reference result:
 
-- top1 around 0.426
-- top5 around 0.675
+- top1 around `0.426`
+- top5 around `0.675`
 
-Small baseline goal:
-
-- Check whether the larger backbone improves valid top1 / top5 over Tiny.
-
-The first Small run used the `small_cached` output prefix. The current Small config now points to the v2 training recipe below.
-
-### Small Baseline v2
-
-Small baseline v2 keeps `SmallISLRModel` unchanged and only adjusts training strategy:
+Small v2 training strategy:
 
 - `label_smoothing = 0.1`
 - `CosineAnnealingLR`
 - best checkpoint selected by `valid_acc`
-- new output prefix: `small_cosine_ls`
-
-The goal is to reduce overfitting in the Small model and move closer to the first-place cosine decay plus regularized training recipe, without adding AWP, SWA, Snapshot, ensemble, or TFLite export.
+- output prefix: `small_cosine_ls`
 
 Train manually:
 
@@ -161,11 +149,14 @@ Evaluate manually:
 python src\evaluate.py --config configs\small_baseline_cached.json --checkpoint outputs\small_cosine_ls_fold0_best.pt --split valid
 ```
 
-### Small Baseline v2 max_len=128
+## Small v2 max_len=128
 
-This experiment keeps the first-place preprocessing landmark selection and `x, y + dx + dx2` feature definition unchanged, but increases cached sequence length from `[64, 708]` to `[128, 708]`.
+This experiment keeps the landmark selection and `x,y + dx + dx2` feature
+definition unchanged, but increases cached sequence length from `[64, 708]` to
+`[128, 708]`.
 
-Use a separate cache directory so the existing `[64, 708]` cache is not overwritten:
+Use a separate cache directory so the existing `[64, 708]` cache is not
+overwritten:
 
 ```powershell
 C:\ASL\islr_feature_cache_fp16_len128
@@ -174,19 +165,19 @@ C:\ASL\islr_feature_cache_fp16_len128
 Build the train cache manually:
 
 ```powershell
-python scripts\build_feature_cache.py --csv outputs\first_place_train_fold0.csv --cache-dir C:\ASL\islr_feature_cache_fp16_len128 --dtype float16 --max-len 128 --max-samples 0
+python scripts\build_feature_cache.py --csv outputs\train_fold0.csv --cache-dir C:\ASL\islr_feature_cache_fp16_len128 --dtype float16 --max-len 128 --max-samples 0
 ```
 
 Build the valid cache manually:
 
 ```powershell
-python scripts\build_feature_cache.py --csv outputs\first_place_valid_fold0.csv --cache-dir C:\ASL\islr_feature_cache_fp16_len128 --dtype float16 --max-len 128 --max-samples 0
+python scripts\build_feature_cache.py --csv outputs\valid_fold0.csv --cache-dir C:\ASL\islr_feature_cache_fp16_len128 --dtype float16 --max-len 128 --max-samples 0
 ```
 
 Check the cached DataLoader manually:
 
 ```powershell
-python scripts\check_cached_dataloader.py --csv outputs\first_place_train_fold0.csv --cache-dir C:\ASL\islr_feature_cache_fp16_len128 --batch-size 32 --max-len 128 --filter-missing-cache
+python scripts\check_cached_dataloader.py --csv outputs\train_fold0.csv --cache-dir C:\ASL\islr_feature_cache_fp16_len128 --batch-size 32 --max-len 128 --filter-missing-cache
 ```
 
 Train Small v2 with `max_len=128` manually:
@@ -207,13 +198,15 @@ Evaluate manually:
 python src\evaluate.py --config configs\small_v2_maxlen128_cached.json --checkpoint outputs\small_v2_len128_fold0_best.pt --split valid
 ```
 
-If GPU memory is not enough, reduce `batch_size` in `configs\small_v2_maxlen128_cached.json` from `128` to `64`.
+If GPU memory is not enough, reduce `batch_size` in
+`configs\small_v2_maxlen128_cached.json` from `128` to `64`.
 
 ## PC Realtime ASL Inference Demo
 
-This project currently trains and runs models for the Kaggle Google Isolated Sign Language Recognition dataset. The recognition target is ASL isolated signs. For Chinese-speaking users, the demo also displays a Chinese meaning for each ASL English label through `data\asl_label_zh_map.json`.
-
-本项目当前模型基于 Kaggle Google Isolated Sign Language Recognition 数据集训练，识别对象为 ASL isolated signs。为了便于中文用户理解，系统提供 ASL 英文标签到中文释义的映射表，在推理结果中同步显示中文含义。该中文显示仅为释义映射，不表示模型训练的是中文手语数据。
+The PC demo uses a webcam plus MediaPipe landmarks to record one isolated sign
+action, convert it into `[1, max_len, 708]` features, run the Small model
+checkpoint, and print Top1/Top5 ASL labels. Chinese meanings can be displayed
+through `data\asl_label_zh_map.json`.
 
 Install the extra realtime demo dependencies manually:
 
@@ -221,7 +214,13 @@ Install the extra realtime demo dependencies manually:
 python -m pip install opencv-python mediapipe
 ```
 
-MediaPipe has two Python API families. Older builds expose `mp.solutions.holistic` directly. Newer Tasks-only builds, such as `mediapipe 0.10.35`, expose `mp.tasks.vision.HolisticLandmarker` and require a separate `holistic_landmarker.task` model asset. If your installed package reports `module 'mediapipe' has no attribute 'solutions'`, download a MediaPipe HolisticLandmarker `.task` model and set this field in `configs\inference_small_v2.json`:
+MediaPipe has two Python API families. Older builds expose
+`mp.solutions.holistic` directly. Newer Tasks-only builds expose
+`mp.tasks.vision.HolisticLandmarker` and require a separate
+`holistic_landmarker.task` model asset. If your installed package reports
+`module 'mediapipe' has no attribute 'solutions'`, download a MediaPipe
+HolisticLandmarker `.task` model and set this field in
+`configs\inference_small_v2.json`:
 
 ```json
 "mediapipe": {
@@ -236,14 +235,6 @@ Configure checkpoint, label map, camera index, and model settings in:
 configs\inference_small_v2.json
 ```
 
-The default inference config uses the existing Small v2 checkpoint:
-
-```powershell
-outputs\small_cosine_ls_fold0_best.pt
-```
-
-That checkpoint was trained with `max_frames=64`, so the demo config also defaults to `max_frames=64`. After you manually train the `max_len=128` Small v2 experiment, update `checkpoint_path` to `outputs\small_v2_len128_fold0_best.pt` and set `max_frames` to `128`.
-
 Run the PC webcam demo manually:
 
 ```powershell
@@ -256,16 +247,16 @@ Controls:
 - `s`: stop recording and recognize
 - `q`: quit
 
-The demo uses MediaPipe Holistic landmarks, restores the Kaggle `[T, 543, 3]` order, calls `first_place_preprocess_array`, and sends `[1, max_len, 708]` into the Small v2 PyTorch checkpoint. Console output includes Top1 and Top5 with English ASL labels plus Chinese meanings, for example:
+Output example:
 
 ```text
-Top1: wait / 等待  confidence=0.7200
+Top1: wait / wait  confidence=0.7200
 Top5:
-1. wait / 等待  confidence=0.7200
-2. later / 稍后  confidence=0.1100
-3. thankyou / 谢谢  confidence=0.0500
-4. stay / 停留  confidence=0.0300
-5. go / 去  confidence=0.0200
+1. wait / wait  confidence=0.7200
+2. later / later  confidence=0.1100
+3. thankyou / thankyou  confidence=0.0500
+4. stay / stay  confidence=0.0300
+5. go / go  confidence=0.0200
 ```
 
 Optional ONNX export for inference experiments:
@@ -274,56 +265,19 @@ Optional ONNX export for inference experiments:
 python scripts\export_onnx.py --config configs\inference_small_v2.json --checkpoint outputs\small_cosine_ls_fold0_best.pt --output outputs\small_cosine_ls.onnx
 ```
 
-You can override the dataset location:
-
-```powershell
-python scripts/check_dataset.py --data-root C:\ASL\asl-signs
-python scripts/inspect_sample.py --data-root C:\ASL\asl-signs --index 0
-python src/preprocess.py --data-root C:\ASL\asl-signs --index 0
-python src/split.py --data-root C:\ASL\asl-signs --n-splits 5
-python scripts/check_dataloader.py --data-root C:\ASL\asl-signs --fold 0 --batch-size 8
-python scripts/check_first_place_preprocess.py --data-root C:\ASL\asl-signs --fold 0 --batch-size 8
-python -m unittest tests.test_model_tiny -v
-python src/train_smoke.py --data-root C:\ASL\asl-signs --fold 0 --batch-size 16 --max-train-batches 20 --max-valid-batches 5 --epochs 1
-python src/train_baseline.py --config configs/tiny_baseline.json
-```
-
-`check_first_place_preprocess.py` checks both first-place preprocessing center modes by default:
-
-- `notebook_strict`: uses landmark `[17]` as the center reference, matching `ISLR_1st_place_Hoyeol_Sohn.ipynb`
-- `nose_mean`: uses the mean of `NOSE = [1, 2, 98, 327]`
-
 ## Outputs
 
+Common generated files include:
+
 - `outputs/dataset_summary.txt`
-- `outputs/sample_inspection.txt`
-- `outputs/env_check.txt`
 - `outputs/train_with_folds.csv`
 - `outputs/split_summary.txt`
 - `outputs/dataloader_check.txt`
-- `outputs/first_place_preprocess_check.txt`
 - `outputs/smoke_train_log.txt`
-- `outputs/smoke_model.pt`
-- `outputs/baseline_train_log.txt`
-- `outputs/baseline_tiny_fold0_best.pt`
-- `outputs/baseline_tiny_fold0_last.pt`
 - `outputs/baseline_cached_metrics.csv`
-- `outputs/eval_tiny_baseline_valid.json`
-- `outputs/eval_tiny_baseline_per_class.csv`
-- `outputs/figures/tiny_baseline_loss_curve.png`
-- `outputs/figures/tiny_baseline_acc_curve.png`
-- `outputs/small_cached_train_log.txt`
-- `outputs/small_cached_metrics.csv`
-- `outputs/small_cached_fold0_best.pt`
-- `outputs/small_cached_fold0_last.pt`
-- `outputs/small_cosine_ls_train_log.txt`
 - `outputs/small_cosine_ls_metrics.csv`
-- `outputs/small_cosine_ls_fold0_best.pt`
-- `outputs/small_cosine_ls_fold0_last.pt`
-- `outputs/small_v2_len128_train_log.txt`
 - `outputs/small_v2_len128_metrics.csv`
 - `outputs/small_v2_len128_fold0_best.pt`
-- `outputs/small_v2_len128_fold0_last.pt`
 - `outputs/small_v2_len128.onnx`
 - `outputs/cache_metadata.csv`
 
@@ -332,28 +286,23 @@ python src/train_baseline.py --config configs/tiny_baseline.json
 Included:
 
 - Dataset structure checks
-- `train.csv` and label map inspection
-- Single parquet sample inspection
-- Minimal landmark tensor preprocessing
+- Label map inspection
+- Single sample inspection
+- Landmark tensor preprocessing
 - Participant GroupKFold split
-- PyTorch Dataset and DataLoader sanity checks
-- First-place-style preprocessing check with `[64, 708]` features
-- Tiny 1DCNN + Transformer smoke training to verify forward, loss, backward, GPU use, and checkpoint saving
-- Config-driven fold0 tiny baseline training with best-checkpoint saving
-- Small trial-training limits in `configs/tiny_baseline.json` for quick baseline checks
-- Optional `.npy` first-place feature cache and cached Dataset/DataLoader
-- Baseline evaluation JSON, per-class CSV, and training curve plotting utilities
-- Small 1DCNN + Transformer cached baseline config and model
-- Small baseline v2 training strategy with label smoothing, cosine LR decay, and best-by-accuracy checkpointing
-- Optional max_len=128 first-place feature cache and Small baseline v2 cached config
-- PC realtime ASL isolated sign inference demo with MediaPipe landmarks and Chinese label meaning display
+- PyTorch Dataset and DataLoader checks
+- Tiny and Small Conv1D + Transformer models
+- Config-driven training and evaluation
+- Cached feature Dataset/DataLoader
+- `max_len=128` cached feature experiment
+- PC realtime ASL isolated sign inference demo
+- ONNX export utility
 
-Not included yet:
+Not included:
 
 - Multi-fold training
 - Ensemble
 - AWP, SWA, Snapshot
-- TFLite export
-- Full competition notebook reproduction
-- Raspberry Pi deployment
-- UI
+- Complex UI
+- Web service
+- Continuous sentence recognition
