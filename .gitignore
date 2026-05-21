@@ -34,6 +34,7 @@ outputs/
 *.pth
 *.ckpt
 *.onnx
+!raspi_deploy/model.onnx
 *.tflite
 
 # Large data and feature cache

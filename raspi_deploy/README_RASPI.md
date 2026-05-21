@@ -13,17 +13,24 @@ The system recognizes ASL isolated signs. Chinese text is only an English ASL la
 - `asl_label_zh_map.json`: optional English ASL sign to Chinese meaning mapping
 - `config.json`: default runtime config
 - `requirements-raspi.txt`: Python dependencies for Raspberry Pi
-- `model.onnx`: exported model file, generated on the PC and copied here
+- `model.onnx`: exported final deployment model generated on the PC and copied here
 
 ## 1. Export ONNX On The PC
 
-Run this from the project root on the PC:
+The deployment package uses `model.onnx`. It was exported on the PC from the final Small v2 `max_len=128` augmented checkpoint:
+
+- checkpoint: `outputs/small_v2_len128_aug_fold0_best.pt`
+- config: `configs/small_v2_maxlen128_aug_cached.json`
+- valid top1: around `0.5569`
+- valid top5: around `0.7611`
+
+If you need to regenerate it, run this from the training branch on the PC:
 
 ```powershell
-python scripts\export_onnx.py --config configs\small_baseline_cached.json --checkpoint outputs\small_cosine_ls_fold0_best.pt --output raspi_deploy\model.onnx
+python scripts\export_onnx.py --config configs\small_v2_maxlen128_aug_cached.json --checkpoint outputs\small_v2_len128_aug_fold0_best.pt --output raspi_deploy\model.onnx
 ```
 
-If your best checkpoint is different, replace the `--checkpoint` path. The checkpoint and config must match the same model architecture and `max_frames`.
+The Raspberry Pi does not need the `.pt` checkpoint or training code. It only needs this deployment directory and `model.onnx`.
 
 ## 2. Prepare Labels
 
@@ -74,7 +81,7 @@ If it fails, install an onnxruntime wheel matching your OS and CPU architecture.
 ## 5. Run
 
 ```bash
-python realtime_asl_raspi.py --model model.onnx --camera-backend picamera2 --camera 0 --max-len 64
+python realtime_asl_raspi.py --model model.onnx --camera-backend picamera2 --camera 0 --max-len 128
 ```
 
 The default `config.json` is set for the CSI camera path:
@@ -82,6 +89,8 @@ The default `config.json` is set for the CSI camera path:
 ```json
 {
   "camera_backend": "picamera2",
+  "max_len": 128,
+  "input_dim": 708,
   "rotate_180": true,
   "swap_r_g": true
 }
@@ -90,7 +99,7 @@ The default `config.json` is set for the CSI camera path:
 These defaults match the observed hardware setup where the CSI camera image needs a 180 degree rotation and red/green channel swap before landmark extraction. For a USB camera or PC-style OpenCV camera, use:
 
 ```bash
-python realtime_asl_raspi.py --model model.onnx --camera-backend opencv --camera 0 --max-len 64 --no-rotate-180 --no-swap-r-g
+python realtime_asl_raspi.py --model model.onnx --camera-backend opencv --camera 0 --max-len 128 --no-rotate-180 --no-swap-r-g
 ```
 
 Controls:
@@ -116,7 +125,7 @@ Top5:
 The script first tries `mp.solutions.holistic`. Some newer MediaPipe Python packages expose only the Tasks API. In that case, provide a HolisticLandmarker `.task` file:
 
 ```bash
-python realtime_asl_raspi.py --model model.onnx --camera 0 --max-len 64 --mediapipe-task /home/pi/asl_demo/holistic_landmarker.task
+python realtime_asl_raspi.py --model model.onnx --camera 0 --max-len 128 --mediapipe-task /home/pi/asl_demo/holistic_landmarker.task
 ```
 
 ## 7. Project Boundary

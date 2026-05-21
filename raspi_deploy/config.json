@@ -8,7 +8,7 @@
   "camera_height": 480,
   "rotate_180": true,
   "swap_r_g": true,
-  "max_len": 64,
+  "max_len": 128,
   "input_dim": 708,
   "topk": 5,
   "record_fps_limit": 10

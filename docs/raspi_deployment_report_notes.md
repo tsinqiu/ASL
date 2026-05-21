@@ -38,7 +38,7 @@ The Raspberry Pi deployment uses the CSI camera through Picamera2 by default. In
 
 ## Runtime Files
 
-- `model.onnx`: exported on the PC from the PyTorch checkpoint
+- `model.onnx`: exported on the PC from the final Small v2 `max_len=128` PyTorch checkpoint
 - `realtime_asl_raspi.py`: Raspberry Pi camera demo
 - `preprocess_runtime.py`: lightweight NumPy preprocessing
 - `labels.json`: model output index to ASL English label
