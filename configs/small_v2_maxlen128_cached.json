@@ -10,7 +10,7 @@
   "center_mode": "notebook_strict",
   "seed": 123,
   "device": "auto",
-  "epochs": 100,
+  "epochs": 30,
   "batch_size": 128,
   "max_train_batches": 0,
   "max_valid_batches": 0,
