@@ -41,8 +41,8 @@ def load_label_map(data_root: Path) -> dict[str, int]:
     return {str(key): int(value) for key, value in raw.items()}
 
 
-def cache_file_name(participant_id: int, sequence_id: int) -> str:
-    return f"{int(participant_id)}_{int(sequence_id)}.npy"
+def cache_file_name(participant_id: int, sequence_id: int, max_len: int) -> str:
+    return f"{int(participant_id)}_{int(sequence_id)}_len{int(max_len)}.npy"
 
 
 def parse_args() -> argparse.Namespace:
@@ -52,6 +52,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--csv", type=Path, default=None)
     parser.add_argument("--cache-dir", type=Path, default=None)
     parser.add_argument("--max-samples", type=int, default=None, help="0 means no limit.")
+    parser.add_argument("--max-len", type=int, default=None, help="Cached sequence length.")
     parser.add_argument("--dtype", choices=["float16", "float32"], default=None)
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
@@ -64,6 +65,7 @@ def merged_config(args: argparse.Namespace) -> dict[str, Any]:
         "csv": Path(args.csv or config.get("csv", DEFAULT_CSV)),
         "cache_dir": Path(args.cache_dir or config.get("cache_dir", DEFAULT_CACHE_DIR)),
         "max_samples": int(args.max_samples if args.max_samples is not None else config.get("max_samples", 0)),
+        "max_len": int(args.max_len if args.max_len is not None else config.get("max_len", 64)),
         "dtype": str(args.dtype or config.get("dtype", "float16")),
         "overwrite": bool(args.overwrite or config.get("overwrite", False)),
     }
@@ -76,6 +78,7 @@ def main() -> None:
     csv_path: Path = config["csv"]
     cache_dir: Path = config["cache_dir"]
     max_samples: int = config["max_samples"]
+    max_len: int = config["max_len"]
     dtype_name: str = config["dtype"]
     overwrite: bool = config["overwrite"]
 
@@ -83,6 +86,8 @@ def main() -> None:
         raise FileNotFoundError(f"CSV file not found: {csv_path}")
     if max_samples < 0:
         raise ValueError(f"--max-samples must be >= 0, got {max_samples}")
+    if max_len <= 0:
+        raise ValueError(f"--max-len must be positive, got {max_len}")
 
     output_dtype = np.float16 if dtype_name == "float16" else np.float32
     label_map = load_label_map(data_root)
@@ -98,7 +103,7 @@ def main() -> None:
         if sign not in label_map:
             raise KeyError(f"Sign {sign!r} is missing from label map")
 
-        cache_path = cache_dir / cache_file_name(int(row.participant_id), int(row.sequence_id))
+        cache_path = cache_dir / cache_file_name(int(row.participant_id), int(row.sequence_id), max_len)
         if cache_path.exists() and not overwrite:
             cache_exists = True
             try:
@@ -110,7 +115,11 @@ def main() -> None:
                 saved_dtype = ""
         else:
             parquet_path = resolve_parquet_path(data_root, row.path)
-            features, _, _ = load_first_place_tensor(parquet_path, max_len=64)
+            features, _, _ = load_first_place_tensor(parquet_path, max_len=max_len)
+            if tuple(features.shape) != (max_len, 708):
+                raise ValueError(
+                    f"Expected generated feature shape {(max_len, 708)}, got {tuple(features.shape)} for {parquet_path}"
+                )
             features = features.astype(output_dtype, copy=False)
             np.save(cache_path, features)
             cache_exists = cache_path.exists()
@@ -125,6 +134,7 @@ def main() -> None:
                 "sign": sign,
                 "label": label_map[sign],
                 "cache_path": str(cache_path),
+                "max_len": max_len,
                 "shape": str(shape),
                 "dtype": saved_dtype,
                 "cache_exists": bool(cache_exists),
@@ -135,6 +145,7 @@ def main() -> None:
     pd.DataFrame(metadata_rows).to_csv(DEFAULT_METADATA, index=False)
     print(f"processed rows: {len(metadata_rows)}")
     print(f"cache_dir: {cache_dir}")
+    print(f"max_len: {max_len}")
     print(f"metadata: {DEFAULT_METADATA.resolve()}")
 
 

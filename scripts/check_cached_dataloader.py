@@ -38,6 +38,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--data-root", type=Path, default=DEFAULT_DATA_ROOT)
     parser.add_argument("--filter-missing-cache", action="store_true")
+    parser.add_argument("--max-len", type=int, default=64)
+    parser.add_argument("--feature-dim", type=int, default=708)
     return parser.parse_args()
 
 
@@ -48,6 +50,8 @@ def main() -> None:
         args.cache_dir,
         data_root=args.data_root,
         filter_missing_cache=args.filter_missing_cache,
+        max_len=args.max_len,
+        feature_dim=args.feature_dim,
     )
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
 
@@ -65,6 +69,7 @@ def main() -> None:
         "=" * 29,
         f"csv: {args.csv}",
         f"cache_dir: {args.cache_dir}",
+        f"expected feature shape: ({args.max_len}, {args.feature_dim})",
         f"filter_missing_cache: {args.filter_missing_cache}",
         f"original csv rows: {dataset.original_len}",
         f"filtered missing rows: {dataset.filtered_missing_count}",

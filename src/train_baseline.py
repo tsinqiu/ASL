@@ -353,6 +353,7 @@ def main() -> None:
     num_workers = int(config["num_workers"])
     max_train_batches = int(config.get("max_train_batches", 0) or 0)
     max_valid_batches = int(config.get("max_valid_batches", 0) or 0)
+    max_frames = int(config["max_frames"])
     dataset_mode = str(config.get("dataset_mode", "online"))
     metrics_csv_path = Path(config.get("metrics_csv_path") or DEFAULT_METRICS_CSV_PATH)
     best_metric = str(config.get("best_metric", "valid_loss"))
@@ -374,24 +375,28 @@ def main() -> None:
             cache_dir,
             data_root=data_root,
             filter_missing_cache=filter_missing_cache,
+            max_len=max_frames,
+            feature_dim=int(config["model"].get("input_dim", 708)),
         )
         valid_dataset = CachedISLRDataset(
             valid_csv,
             cache_dir,
             data_root=data_root,
             filter_missing_cache=filter_missing_cache,
+            max_len=max_frames,
+            feature_dim=int(config["model"].get("input_dim", 708)),
         )
     else:
         train_dataset = FirstPlaceISLRDataset(
             data_root,
             train_csv,
-            max_len=int(config["max_frames"]),
+            max_len=max_frames,
             center_mode=str(config["center_mode"]),
         )
         valid_dataset = FirstPlaceISLRDataset(
             data_root,
             valid_csv,
-            max_len=int(config["max_frames"]),
+            max_len=max_frames,
             center_mode=str(config["center_mode"]),
         )
     train_loader = make_loader(train_dataset, batch_size, shuffle=True, num_workers=num_workers, device=device)
@@ -426,6 +431,7 @@ def main() -> None:
     add(log_lines, f"center_mode: {config['center_mode']}")
     add(log_lines, f"epochs: {config['epochs']}")
     add(log_lines, f"batch_size: {batch_size}")
+    add(log_lines, f"max_frames: {max_frames}")
     add(log_lines, f"max_train_batches: {max_train_batches}")
     add(log_lines, f"max_valid_batches: {max_valid_batches}")
     add(log_lines, f"num_workers: {num_workers}")

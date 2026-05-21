@@ -1,0 +1,9 @@
+{
+  "data_root": "C:\\ASL\\asl-signs",
+  "csv": "outputs/first_place_train_fold0.csv",
+  "cache_dir": "C:\\ASL\\islr_feature_cache_fp16_len128",
+  "max_samples": 0,
+  "max_len": 128,
+  "dtype": "float16",
+  "overwrite": false
+}

@@ -161,6 +161,119 @@ Evaluate manually:
 python src\evaluate.py --config configs\small_baseline_cached.json --checkpoint outputs\small_cosine_ls_fold0_best.pt --split valid
 ```
 
+### Small Baseline v2 max_len=128
+
+This experiment keeps the first-place preprocessing landmark selection and `x, y + dx + dx2` feature definition unchanged, but increases cached sequence length from `[64, 708]` to `[128, 708]`.
+
+Use a separate cache directory so the existing `[64, 708]` cache is not overwritten:
+
+```powershell
+C:\ASL\islr_feature_cache_fp16_len128
+```
+
+Build the train cache manually:
+
+```powershell
+python scripts\build_feature_cache.py --csv outputs\first_place_train_fold0.csv --cache-dir C:\ASL\islr_feature_cache_fp16_len128 --dtype float16 --max-len 128 --max-samples 0
+```
+
+Build the valid cache manually:
+
+```powershell
+python scripts\build_feature_cache.py --csv outputs\first_place_valid_fold0.csv --cache-dir C:\ASL\islr_feature_cache_fp16_len128 --dtype float16 --max-len 128 --max-samples 0
+```
+
+Check the cached DataLoader manually:
+
+```powershell
+python scripts\check_cached_dataloader.py --csv outputs\first_place_train_fold0.csv --cache-dir C:\ASL\islr_feature_cache_fp16_len128 --batch-size 32 --max-len 128 --filter-missing-cache
+```
+
+Train Small v2 with `max_len=128` manually:
+
+```powershell
+python src\train_baseline.py --config configs\small_v2_maxlen128_cached.json
+```
+
+Plot curves manually:
+
+```powershell
+python scripts\plot_training_curves.py --csv outputs\small_v2_len128_metrics.csv
+```
+
+Evaluate manually:
+
+```powershell
+python src\evaluate.py --config configs\small_v2_maxlen128_cached.json --checkpoint outputs\small_v2_len128_fold0_best.pt --split valid
+```
+
+If GPU memory is not enough, reduce `batch_size` in `configs\small_v2_maxlen128_cached.json` from `128` to `64`.
+
+## PC Realtime ASL Inference Demo
+
+This project currently trains and runs models for the Kaggle Google Isolated Sign Language Recognition dataset. The recognition target is ASL isolated signs. For Chinese-speaking users, the demo also displays a Chinese meaning for each ASL English label through `data\asl_label_zh_map.json`.
+
+本项目当前模型基于 Kaggle Google Isolated Sign Language Recognition 数据集训练，识别对象为 ASL isolated signs。为了便于中文用户理解，系统提供 ASL 英文标签到中文释义的映射表，在推理结果中同步显示中文含义。该中文显示仅为释义映射，不表示模型训练的是中文手语数据。
+
+Install the extra realtime demo dependencies manually:
+
+```powershell
+python -m pip install opencv-python mediapipe
+```
+
+MediaPipe has two Python API families. Older builds expose `mp.solutions.holistic` directly. Newer Tasks-only builds, such as `mediapipe 0.10.35`, expose `mp.tasks.vision.HolisticLandmarker` and require a separate `holistic_landmarker.task` model asset. If your installed package reports `module 'mediapipe' has no attribute 'solutions'`, download a MediaPipe HolisticLandmarker `.task` model and set this field in `configs\inference_small_v2.json`:
+
+```json
+"mediapipe": {
+  "backend": "auto",
+  "model_asset_path": "C:\\ASL\\models\\holistic_landmarker.task"
+}
+```
+
+Configure checkpoint, label map, camera index, and model settings in:
+
+```powershell
+configs\inference_small_v2.json
+```
+
+The default inference config uses the existing Small v2 checkpoint:
+
+```powershell
+outputs\small_cosine_ls_fold0_best.pt
+```
+
+That checkpoint was trained with `max_frames=64`, so the demo config also defaults to `max_frames=64`. After you manually train the `max_len=128` Small v2 experiment, update `checkpoint_path` to `outputs\small_v2_len128_fold0_best.pt` and set `max_frames` to `128`.
+
+Run the PC webcam demo manually:
+
+```powershell
+python demo_asl_pc.py --config configs\inference_small_v2.json
+```
+
+Controls:
+
+- `r`: start recording one isolated sign action
+- `s`: stop recording and recognize
+- `q`: quit
+
+The demo uses MediaPipe Holistic landmarks, restores the Kaggle `[T, 543, 3]` order, calls `first_place_preprocess_array`, and sends `[1, max_len, 708]` into the Small v2 PyTorch checkpoint. Console output includes Top1 and Top5 with English ASL labels plus Chinese meanings, for example:
+
+```text
+Top1: wait / 等待  confidence=0.7200
+Top5:
+1. wait / 等待  confidence=0.7200
+2. later / 稍后  confidence=0.1100
+3. thankyou / 谢谢  confidence=0.0500
+4. stay / 停留  confidence=0.0300
+5. go / 去  confidence=0.0200
+```
+
+Optional ONNX export for inference experiments:
+
+```powershell
+python scripts\export_onnx.py --config configs\inference_small_v2.json --checkpoint outputs\small_cosine_ls_fold0_best.pt --output outputs\small_cosine_ls.onnx
+```
+
 You can override the dataset location:
 
 ```powershell
@@ -207,6 +320,11 @@ python src/train_baseline.py --config configs/tiny_baseline.json
 - `outputs/small_cosine_ls_metrics.csv`
 - `outputs/small_cosine_ls_fold0_best.pt`
 - `outputs/small_cosine_ls_fold0_last.pt`
+- `outputs/small_v2_len128_train_log.txt`
+- `outputs/small_v2_len128_metrics.csv`
+- `outputs/small_v2_len128_fold0_best.pt`
+- `outputs/small_v2_len128_fold0_last.pt`
+- `outputs/small_v2_len128.onnx`
 - `outputs/cache_metadata.csv`
 
 ## Scope
@@ -227,6 +345,8 @@ Included:
 - Baseline evaluation JSON, per-class CSV, and training curve plotting utilities
 - Small 1DCNN + Transformer cached baseline config and model
 - Small baseline v2 training strategy with label smoothing, cosine LR decay, and best-by-accuracy checkpointing
+- Optional max_len=128 first-place feature cache and Small baseline v2 cached config
+- PC realtime ASL isolated sign inference demo with MediaPipe landmarks and Chinese label meaning display
 
 Not included yet:
 
