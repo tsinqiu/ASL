@@ -1,0 +1,15 @@
+{
+  "model_path": "model.onnx",
+  "labels_path": "labels.json",
+  "zh_map_path": "asl_label_zh_map.json",
+  "camera_backend": "picamera2",
+  "camera_id": 0,
+  "camera_width": 640,
+  "camera_height": 480,
+  "rotate_180": true,
+  "swap_r_g": true,
+  "max_len": 64,
+  "input_dim": 708,
+  "topk": 5,
+  "record_fps_limit": 10
+}

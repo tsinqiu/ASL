@@ -1,239 +1,94 @@
-# Kaggle ISLR Reproduction
+# ASL Isolated Sign Raspberry Pi Deployment
 
-Current stage: Kaggle ISLR Dataset / DataLoader pipeline.
+This branch is a clean deployment branch for running the Kaggle Google Isolated Sign Language Recognition model on Raspberry Pi / Linux ARM.
 
-This repository checks the dataset, creates participant-based folds, reads parquet landmark files, verifies PyTorch `Dataset` / `DataLoader` batches, and includes a tiny smoke-training baseline. The smoke training is only a short pipeline check, not formal model training.
+The model recognizes ASL isolated signs. Chinese text, when shown, is only a display-time meaning for the English ASL label. It is not Chinese Sign Language recognition, and it is not continuous sign language translation.
 
-## Data
+## What Is Included
 
-Default data path:
+- `raspi_deploy/`: Raspberry Pi runtime package
+- `scripts/export_onnx.py`: PC-side PyTorch checkpoint to ONNX export
+- `configs/small_baseline_cached.json`: model architecture and `max_frames` config used by the export script
+- `src/model_small.py`: Small model definition needed to load the checkpoint for export
+- `src/model_tiny.py`: Tiny model definition retained because the exporter supports both `tiny` and `small`
+- `docs/raspi_deployment_report_notes.md`: report notes for the deployment section
 
-```powershell
-C:\ASL\asl-signs
-```
+Training code, dataset inspection scripts, parquet preprocessing utilities, cache builders, tests, and notebooks are intentionally removed from this branch.
 
-The large Kaggle dataset is not copied into this project. Scripts read it through `--data-root`, which defaults to `C:\ASL\asl-signs`.
+## PC-Side ONNX Export
 
-## Setup
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\activate
-python -m pip install --upgrade pip
-python -m pip install pandas numpy pyarrow scikit-learn tqdm
-```
-
-Install GPU PyTorch separately with the official CUDA 11.8 wheel index:
+Run this manually on the PC before copying the deployment package to Raspberry Pi:
 
 ```powershell
-python -m pip install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu118
+python scripts\export_onnx.py --config configs\small_baseline_cached.json --checkpoint outputs\small_cosine_ls_fold0_best.pt --output raspi_deploy\model.onnx
 ```
 
-PyTorch CUDA wheels require a separate `--index-url`, so `torch`, `torchvision`, and `torchaudio` are intentionally not listed in `requirements.txt`.
+If the best checkpoint changes, replace the `--checkpoint` path. The config and checkpoint must match the same model architecture and `max_frames`.
 
-Environment check:
+The exporter prints:
 
-```powershell
-python -c "import sys, torch; print('python:', sys.version); print('torch:', torch.__version__); print('cuda available:', torch.cuda.is_available()); print('torch cuda:', torch.version.cuda); print('gpu:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU only')"
+- checkpoint path
+- output ONNX path
+- max length
+- input dimension
+- number of classes
+
+## Raspberry Pi Runtime
+
+Follow:
+
+- `raspi_deploy/README_RASPI.md`
+
+Typical copy command after `raspi_deploy/model.onnx` exists:
+
+```bash
+scp -r raspi_deploy pi@<raspi_ip>:/home/pi/asl_demo
 ```
 
-## Commands
+Typical Raspberry Pi run command for the CSI camera with Picamera2:
 
-```powershell
-python scripts/check_dataset.py
-python scripts/inspect_sample.py --index 0
-python src/preprocess.py --index 0
-python src/split.py --data-root C:\ASL\asl-signs --n-splits 5
-python scripts/check_dataloader.py --data-root C:\ASL\asl-signs --fold 0 --batch-size 8
-python scripts/check_first_place_preprocess.py --data-root C:\ASL\asl-signs --fold 0 --batch-size 8
-python -m unittest tests.test_model_tiny -v
-python src/train_smoke.py --data-root C:\ASL\asl-signs --fold 0 --batch-size 16 --max-train-batches 20 --max-valid-batches 5 --epochs 1
-python src/train_baseline.py --config configs/tiny_baseline.json
+```bash
+cd /home/pi/asl_demo
+sudo apt update
+sudo apt install -y python3-picamera2
+python3 -m venv --system-site-packages .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements-raspi.txt
+python realtime_asl_raspi.py --model model.onnx --camera-backend picamera2 --camera 0 --max-len 64
 ```
 
-`configs/tiny_baseline.json` is currently a small trial-training config, not a full formal training run. It defaults to `epochs=1`, `max_train_batches=100`, and `max_valid_batches=20` so you can verify that train loss, valid loss, valid accuracy, and best/last checkpoint saving work before committing to a full fold run.
+The deployment config defaults to the observed CSI camera corrections: `rotate_180=true` and `swap_r_g=true`.
 
-## Feature Cache
+Controls:
 
-Online first-place preprocessing reads parquet files and computes `[64, 708]` features on the fly. For faster repeated experiments, you can manually build a `.npy` feature cache.
+- `r`: start recording one isolated sign action
+- `s`: stop recording and recognize
+- `q`: quit
 
-Small cache build test:
+## Runtime Flow
 
-```powershell
-python scripts\build_feature_cache.py --csv outputs\first_place_train_fold0.csv --cache-dir C:\ASL\islr_feature_cache_fp16 --max-samples 1000
+```text
+Camera image
+-> MediaPipe Holistic landmarks
+-> restore Kaggle [T, 543, 3] landmark order
+-> runtime first-place-style preprocessing to [max_len, 708]
+-> ONNX Runtime inference
+-> CLI top1/top5 ASL label output with optional Chinese meaning
 ```
 
-This writes feature files named `{participant_id}_{sequence_id}.npy` and a metadata table at `outputs/cache_metadata.csv`.
+## Boundaries
 
-Check cached DataLoader:
+- No retraining in this branch.
+- No training code in this branch.
+- No recommendation vocabulary.
+- No complex UI.
+- No web service.
+- No continuous sentence recognition.
+- Chinese meanings are label explanations only and are not used for training.
 
-```powershell
-python scripts\check_cached_dataloader.py --csv outputs\first_place_train_fold0.csv --cache-dir C:\ASL\islr_feature_cache_fp16 --batch-size 32
-```
+## Report Notes
 
-If you built only a partial cache and want the check to report the usable cached subset, add:
+See:
 
-```powershell
-python scripts\check_cached_dataloader.py --csv outputs\first_place_train_fold0.csv --cache-dir C:\ASL\islr_feature_cache_fp16 --batch-size 32 --filter-missing-cache
-```
-
-Use cached features for the tiny baseline:
-
-```powershell
-python src\train_baseline.py --config configs\tiny_baseline_cached.json
-```
-
-For cached training, make sure cache files exist for the rows that training and validation will read. The 1000-row cache command above is intended as a small cache test. `configs/tiny_baseline_cached.json` uses `filter_missing_cache=true`, so it will train only on rows that already have `.npy` files. If validation has no cached rows, build cache for the valid CSV too:
-
-```powershell
-python scripts\build_feature_cache.py --csv outputs\first_place_valid_fold0.csv --cache-dir C:\ASL\islr_feature_cache_fp16 --max-samples 640
-```
-
-## Baseline Evaluation
-
-Current comparable baseline:
-
-- Tiny cached baseline
-- fold0
-- 5 epochs
-- best valid accuracy around 0.426
-
-Run full validation split evaluation manually:
-
-```powershell
-python src\evaluate.py --config configs\tiny_baseline_cached.json --checkpoint outputs\baseline_cached_tiny_fold0_best.pt --split valid
-```
-
-Plot training curves manually:
-
-```powershell
-python scripts\plot_training_curves.py --csv outputs\baseline_cached_metrics.csv
-```
-
-`evaluate.py` does not train; it only loads a checkpoint and evaluates it. `plot_training_curves.py` only reads the metrics CSV and writes PNG figures. If `outputs\baseline_cached_metrics.csv` does not exist yet, rerun `train_baseline.py` manually once to generate it.
-
-## Small Baseline
-
-Small baseline is the next upgrade after the Tiny cached baseline. It stays within a locally trainable size while moving closer to the first-place 1DCNN + Transformer structure:
-
-- More Conv1D blocks
-- Two Conv + Transformer stages
-- Larger `d_model`
-- Still no AWP, SWA, Snapshot, ensemble, or TFLite export
-
-Tiny baseline reference result:
-
-- top1 around 0.426
-- top5 around 0.675
-
-Small baseline goal:
-
-- Check whether the larger backbone improves valid top1 / top5 over Tiny.
-
-The first Small run used the `small_cached` output prefix. The current Small config now points to the v2 training recipe below.
-
-### Small Baseline v2
-
-Small baseline v2 keeps `SmallISLRModel` unchanged and only adjusts training strategy:
-
-- `label_smoothing = 0.1`
-- `CosineAnnealingLR`
-- best checkpoint selected by `valid_acc`
-- new output prefix: `small_cosine_ls`
-
-The goal is to reduce overfitting in the Small model and move closer to the first-place cosine decay plus regularized training recipe, without adding AWP, SWA, Snapshot, ensemble, or TFLite export.
-
-Train manually:
-
-```powershell
-python src\train_baseline.py --config configs\small_baseline_cached.json
-```
-
-Plot curves manually:
-
-```powershell
-python scripts\plot_training_curves.py --csv outputs\small_cosine_ls_metrics.csv
-```
-
-Evaluate manually:
-
-```powershell
-python src\evaluate.py --config configs\small_baseline_cached.json --checkpoint outputs\small_cosine_ls_fold0_best.pt --split valid
-```
-
-You can override the dataset location:
-
-```powershell
-python scripts/check_dataset.py --data-root C:\ASL\asl-signs
-python scripts/inspect_sample.py --data-root C:\ASL\asl-signs --index 0
-python src/preprocess.py --data-root C:\ASL\asl-signs --index 0
-python src/split.py --data-root C:\ASL\asl-signs --n-splits 5
-python scripts/check_dataloader.py --data-root C:\ASL\asl-signs --fold 0 --batch-size 8
-python scripts/check_first_place_preprocess.py --data-root C:\ASL\asl-signs --fold 0 --batch-size 8
-python -m unittest tests.test_model_tiny -v
-python src/train_smoke.py --data-root C:\ASL\asl-signs --fold 0 --batch-size 16 --max-train-batches 20 --max-valid-batches 5 --epochs 1
-python src/train_baseline.py --config configs/tiny_baseline.json
-```
-
-`check_first_place_preprocess.py` checks both first-place preprocessing center modes by default:
-
-- `notebook_strict`: uses landmark `[17]` as the center reference, matching `ISLR_1st_place_Hoyeol_Sohn.ipynb`
-- `nose_mean`: uses the mean of `NOSE = [1, 2, 98, 327]`
-
-## Outputs
-
-- `outputs/dataset_summary.txt`
-- `outputs/sample_inspection.txt`
-- `outputs/env_check.txt`
-- `outputs/train_with_folds.csv`
-- `outputs/split_summary.txt`
-- `outputs/dataloader_check.txt`
-- `outputs/first_place_preprocess_check.txt`
-- `outputs/smoke_train_log.txt`
-- `outputs/smoke_model.pt`
-- `outputs/baseline_train_log.txt`
-- `outputs/baseline_tiny_fold0_best.pt`
-- `outputs/baseline_tiny_fold0_last.pt`
-- `outputs/baseline_cached_metrics.csv`
-- `outputs/eval_tiny_baseline_valid.json`
-- `outputs/eval_tiny_baseline_per_class.csv`
-- `outputs/figures/tiny_baseline_loss_curve.png`
-- `outputs/figures/tiny_baseline_acc_curve.png`
-- `outputs/small_cached_train_log.txt`
-- `outputs/small_cached_metrics.csv`
-- `outputs/small_cached_fold0_best.pt`
-- `outputs/small_cached_fold0_last.pt`
-- `outputs/small_cosine_ls_train_log.txt`
-- `outputs/small_cosine_ls_metrics.csv`
-- `outputs/small_cosine_ls_fold0_best.pt`
-- `outputs/small_cosine_ls_fold0_last.pt`
-- `outputs/cache_metadata.csv`
-
-## Scope
-
-Included:
-
-- Dataset structure checks
-- `train.csv` and label map inspection
-- Single parquet sample inspection
-- Minimal landmark tensor preprocessing
-- Participant GroupKFold split
-- PyTorch Dataset and DataLoader sanity checks
-- First-place-style preprocessing check with `[64, 708]` features
-- Tiny 1DCNN + Transformer smoke training to verify forward, loss, backward, GPU use, and checkpoint saving
-- Config-driven fold0 tiny baseline training with best-checkpoint saving
-- Small trial-training limits in `configs/tiny_baseline.json` for quick baseline checks
-- Optional `.npy` first-place feature cache and cached Dataset/DataLoader
-- Baseline evaluation JSON, per-class CSV, and training curve plotting utilities
-- Small 1DCNN + Transformer cached baseline config and model
-- Small baseline v2 training strategy with label smoothing, cosine LR decay, and best-by-accuracy checkpointing
-
-Not included yet:
-
-- Multi-fold training
-- Ensemble
-- AWP, SWA, Snapshot
-- TFLite export
-- Full competition notebook reproduction
-- Raspberry Pi deployment
-- UI
+- `docs/raspi_deployment_report_notes.md`
