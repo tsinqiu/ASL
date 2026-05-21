@@ -6,7 +6,7 @@ from typing import Mapping
 
 
 def load_labels(path: str | Path) -> dict[int, str]:
-    with Path(path).open("r", encoding="utf-8") as f:
+    with Path(path).open("r", encoding="utf-8-sig") as f:
         raw = json.load(f)
     return {int(index): str(sign) for index, sign in raw.items()}
 
@@ -15,7 +15,7 @@ def load_zh_map(path: str | Path) -> dict[str, str]:
     map_path = Path(path)
     if not map_path.exists():
         return {}
-    with map_path.open("r", encoding="utf-8") as f:
+    with map_path.open("r", encoding="utf-8-sig") as f:
         raw = json.load(f)
     return {str(sign): str(meaning) for sign, meaning in raw.items()}
 
