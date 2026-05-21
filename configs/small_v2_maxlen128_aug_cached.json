@@ -1,0 +1,53 @@
+{
+  "data_root": "C:\\ASL\\asl-signs",
+  "fold": 0,
+  "model_name": "small",
+  "dataset_mode": "cache",
+  "cache_dir": "C:\\ASL\\islr_feature_cache_fp16_len128",
+  "filter_missing_cache": true,
+  "train_csv": "outputs/first_place_train_fold0.csv",
+  "valid_csv": "outputs/first_place_valid_fold0.csv",
+  "center_mode": "notebook_strict",
+  "seed": 123,
+  "device": "auto",
+  "epochs": 60,
+  "batch_size": 128,
+  "max_train_batches": 0,
+  "max_valid_batches": 0,
+  "max_frames": 128,
+  "num_workers": 0,
+  "lr": 0.0005,
+  "weight_decay": 0.01,
+  "grad_clip_norm": 1.0,
+  "use_amp": true,
+  "label_smoothing": 0.1,
+  "best_metric": "valid_acc",
+  "best_mode": "max",
+  "scheduler": {
+    "name": "cosine",
+    "t_max": 60,
+    "eta_min": 0.00001
+  },
+  "augmentation": {
+    "enabled": true,
+    "temporal_mask_prob": 0.35,
+    "temporal_mask_max_width": 12,
+    "temporal_shift_prob": 0.35,
+    "temporal_shift_max": 6,
+    "feature_dropout_prob": 0.10,
+    "feature_dropout_width": 32,
+    "gaussian_noise_prob": 0.20,
+    "gaussian_noise_std": 0.015
+  },
+  "model": {
+    "input_dim": 708,
+    "num_classes": 250,
+    "d_model": 192,
+    "nhead": 4,
+    "dropout": 0.15
+  },
+  "log_path": "outputs/small_v2_len128_aug_train_log.txt",
+  "metrics_csv_path": "outputs/small_v2_len128_aug_metrics.csv",
+  "best_checkpoint_path": "outputs/small_v2_len128_aug_fold0_best.pt",
+  "last_checkpoint_path": "outputs/small_v2_len128_aug_fold0_last.pt"
+}

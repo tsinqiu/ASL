@@ -46,6 +46,8 @@ def build_dataset(config: dict[str, Any], split: str) -> CachedISLRDataset | Fir
             cache_dir,
             data_root=data_root,
             filter_missing_cache=bool(config.get("filter_missing_cache", False)),
+            max_len=int(config["max_frames"]),
+            feature_dim=int(config["model"].get("input_dim", 708)),
         )
 
     if dataset_mode == "online":

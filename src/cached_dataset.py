@@ -12,10 +12,17 @@ from torch.utils.data import Dataset
 from first_place_preprocess import DEFAULT_DATA_ROOT
 
 
-EXPECTED_SHAPE = (64, 708)
+DEFAULT_MAX_LEN = 64
+DEFAULT_FEATURE_DIM = 708
 
 
-def cache_file_name(participant_id: int, sequence_id: int) -> str:
+def cache_file_name(participant_id: int, sequence_id: int, max_len: int | None = None) -> str:
+    if max_len is None:
+        return f"{int(participant_id)}_{int(sequence_id)}.npy"
+    return f"{int(participant_id)}_{int(sequence_id)}_len{int(max_len)}.npy"
+
+
+def legacy_cache_file_name(participant_id: int, sequence_id: int) -> str:
     return f"{int(participant_id)}_{int(sequence_id)}.npy"
 
 
@@ -36,12 +43,22 @@ class CachedISLRDataset(Dataset):
         data_root: str | Path = DEFAULT_DATA_ROOT,
         label_map_path: str | Path | None = None,
         filter_missing_cache: bool = False,
+        max_len: int = DEFAULT_MAX_LEN,
+        feature_dim: int = DEFAULT_FEATURE_DIM,
     ) -> None:
         self.csv_path = Path(csv_path)
         self.cache_dir = Path(cache_dir)
         self.data_root = Path(data_root)
         self.label_map_path = Path(label_map_path) if label_map_path is not None else self.data_root / "sign_to_prediction_index_map.json"
         self.filter_missing_cache = filter_missing_cache
+        self.max_len = int(max_len)
+        self.feature_dim = int(feature_dim)
+        self.expected_shape = (self.max_len, self.feature_dim)
+
+        if self.max_len <= 0:
+            raise ValueError(f"max_len must be positive, got {self.max_len}")
+        if self.feature_dim <= 0:
+            raise ValueError(f"feature_dim must be positive, got {self.feature_dim}")
 
         if not self.csv_path.exists():
             raise FileNotFoundError(f"CSV file not found: {self.csv_path}")
@@ -68,7 +85,12 @@ class CachedISLRDataset(Dataset):
         return len(self.df)
 
     def _cache_path_for_row(self, row: pd.Series) -> Path:
-        return self.cache_dir / cache_file_name(int(row["participant_id"]), int(row["sequence_id"]))
+        participant_id = int(row["participant_id"])
+        sequence_id = int(row["sequence_id"])
+        len_specific_path = self.cache_dir / cache_file_name(participant_id, sequence_id, self.max_len)
+        if len_specific_path.exists():
+            return len_specific_path
+        return self.cache_dir / legacy_cache_file_name(participant_id, sequence_id)
 
     def __getitem__(self, index: int) -> dict[str, Any]:
         row = self.df.iloc[index]
@@ -80,8 +102,11 @@ class CachedISLRDataset(Dataset):
             )
 
         x_np = np.load(cache_path)
-        if tuple(x_np.shape) != EXPECTED_SHAPE:
-            raise ValueError(f"Expected cached feature shape {EXPECTED_SHAPE}, got {x_np.shape} at {cache_path}")
+        if tuple(x_np.shape) != self.expected_shape:
+            raise ValueError(
+                f"Expected cached feature shape {self.expected_shape} "
+                f"(max_len={self.max_len}, feature_dim={self.feature_dim}), got {tuple(x_np.shape)} at {cache_path}"
+            )
         x_np = x_np.astype(np.float32, copy=False)
         mask_np = np.any(x_np != 0.0, axis=1)
 

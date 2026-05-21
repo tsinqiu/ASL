@@ -161,6 +161,30 @@ Evaluate manually:
 python src\evaluate.py --config configs\small_baseline_cached.json --checkpoint outputs\small_cosine_ls_fold0_best.pt --split valid
 ```
 
+### Small Baseline v2 max_len=128 + augmentation
+
+This experiment builds on Small v2 with `max_len=128` cached features and adds lightweight cached feature augmentation to reduce the train/valid gap. The previous Small v2 `max_len=128` reference result was best `valid_acc` around `0.5368`.
+
+The augmentation is applied only during training. Validation and evaluation use the cached features unchanged.
+
+Train manually:
+
+```powershell
+python src\train_baseline.py --config configs\small_v2_maxlen128_aug_cached.json
+```
+
+Plot curves manually:
+
+```powershell
+python scripts\plot_training_curves.py --csv outputs\small_v2_len128_aug_metrics.csv
+```
+
+Evaluate manually:
+
+```powershell
+python src\evaluate.py --config configs\small_v2_maxlen128_aug_cached.json --checkpoint outputs\small_v2_len128_aug_fold0_best.pt --split valid
+```
+
 You can override the dataset location:
 
 ```powershell
@@ -207,6 +231,10 @@ python src/train_baseline.py --config configs/tiny_baseline.json
 - `outputs/small_cosine_ls_metrics.csv`
 - `outputs/small_cosine_ls_fold0_best.pt`
 - `outputs/small_cosine_ls_fold0_last.pt`
+- `outputs/small_v2_len128_aug_train_log.txt`
+- `outputs/small_v2_len128_aug_metrics.csv`
+- `outputs/small_v2_len128_aug_fold0_best.pt`
+- `outputs/small_v2_len128_aug_fold0_last.pt`
 - `outputs/cache_metadata.csv`
 
 ## Scope
@@ -227,6 +255,7 @@ Included:
 - Baseline evaluation JSON, per-class CSV, and training curve plotting utilities
 - Small 1DCNN + Transformer cached baseline config and model
 - Small baseline v2 training strategy with label smoothing, cosine LR decay, and best-by-accuracy checkpointing
+- Small v2 max_len=128 cached feature augmentation config
 
 Not included yet:
 

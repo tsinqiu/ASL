@@ -13,6 +13,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
+from augment import apply_augmentation
 from cached_dataset import CachedISLRDataset
 from first_place_preprocess import CENTER_MODES, FirstPlaceISLRDataset
 from model_small import SmallISLRModel
@@ -31,6 +32,7 @@ METRICS_CSV_FIELDS = (
     "elapsed_sec",
     "is_best",
     "lr",
+    "augmentation_enabled",
 )
 
 
@@ -210,6 +212,7 @@ def train_one_epoch(
     scaler: torch.amp.GradScaler,
     use_amp: bool,
     grad_clip_norm: float | None,
+    augmentation_config: dict[str, Any] | None = None,
     max_batches: int = 0,
 ) -> tuple[float, float, tuple[int, ...], tuple[int, ...]]:
     model.train()
@@ -225,6 +228,7 @@ def train_one_epoch(
         x, mask, y = move_batch_to_device(batch, device)
         if first_batch_shape is None:
             first_batch_shape = tuple(x.shape)
+        x, mask = apply_augmentation(x, mask, augmentation_config)
 
         optimizer.zero_grad(set_to_none=True)
         with torch.amp.autocast(device_type=device.type, enabled=use_amp):
@@ -353,11 +357,14 @@ def main() -> None:
     num_workers = int(config["num_workers"])
     max_train_batches = int(config.get("max_train_batches", 0) or 0)
     max_valid_batches = int(config.get("max_valid_batches", 0) or 0)
+    max_frames = int(config["max_frames"])
     dataset_mode = str(config.get("dataset_mode", "online"))
     metrics_csv_path = Path(config.get("metrics_csv_path") or DEFAULT_METRICS_CSV_PATH)
     best_metric = str(config.get("best_metric", "valid_loss"))
     best_mode = str(config.get("best_mode", "min"))
     label_smoothing = float(config.get("label_smoothing", 0.0))
+    augmentation_config = config.get("augmentation", {"enabled": False}) or {"enabled": False}
+    augmentation_enabled = bool(augmentation_config.get("enabled", False))
     scheduler_config = config.get("scheduler", {"name": "none"}) or {"name": "none"}
     scheduler_name = str(scheduler_config.get("name", "none")).lower()
 
@@ -374,24 +381,28 @@ def main() -> None:
             cache_dir,
             data_root=data_root,
             filter_missing_cache=filter_missing_cache,
+            max_len=max_frames,
+            feature_dim=int(config["model"].get("input_dim", 708)),
         )
         valid_dataset = CachedISLRDataset(
             valid_csv,
             cache_dir,
             data_root=data_root,
             filter_missing_cache=filter_missing_cache,
+            max_len=max_frames,
+            feature_dim=int(config["model"].get("input_dim", 708)),
         )
     else:
         train_dataset = FirstPlaceISLRDataset(
             data_root,
             train_csv,
-            max_len=int(config["max_frames"]),
+            max_len=max_frames,
             center_mode=str(config["center_mode"]),
         )
         valid_dataset = FirstPlaceISLRDataset(
             data_root,
             valid_csv,
-            max_len=int(config["max_frames"]),
+            max_len=max_frames,
             center_mode=str(config["center_mode"]),
         )
     train_loader = make_loader(train_dataset, batch_size, shuffle=True, num_workers=num_workers, device=device)
@@ -426,12 +437,17 @@ def main() -> None:
     add(log_lines, f"center_mode: {config['center_mode']}")
     add(log_lines, f"epochs: {config['epochs']}")
     add(log_lines, f"batch_size: {batch_size}")
+    add(log_lines, f"max_frames: {max_frames}")
     add(log_lines, f"max_train_batches: {max_train_batches}")
     add(log_lines, f"max_valid_batches: {max_valid_batches}")
     add(log_lines, f"num_workers: {num_workers}")
     add(log_lines, f"lr: {config['lr']}")
     add(log_lines, f"weight_decay: {config['weight_decay']}")
     add(log_lines, f"label_smoothing: {label_smoothing}")
+    add(log_lines, f"augmentation_enabled: {augmentation_enabled}")
+    if augmentation_enabled:
+        for key in sorted(augmentation_config):
+            add(log_lines, f"augmentation_{key}: {augmentation_config[key]}")
     add(log_lines, f"scheduler: {scheduler_name}")
     if scheduler_name == "cosine":
         add(log_lines, f"scheduler_t_max: {int(scheduler_config['t_max'])}")
@@ -465,6 +481,7 @@ def main() -> None:
             scaler,
             use_amp,
             float(config["grad_clip_norm"]) if config.get("grad_clip_norm") is not None else None,
+            augmentation_config,
             max_train_batches,
         )
         valid_loss, valid_acc, valid_batch_shape, valid_logits_shape = validate_one_epoch(
@@ -533,6 +550,7 @@ def main() -> None:
                 "elapsed_sec": elapsed,
                 "is_best": is_best,
                 "lr": lr,
+                "augmentation_enabled": augmentation_enabled,
             },
         )
         print(log_lines[-1], flush=True)
