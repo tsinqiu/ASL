@@ -2,14 +2,14 @@
 
 ## Deployment Goal
 
-The deployment goal is to migrate the ASL isolated sign recognition model trained on the PC to a Raspberry Pi environment. The Raspberry Pi version should support camera capture, MediaPipe landmark extraction, first-place-style feature preprocessing, ONNX Runtime inference, and recognition result output.
+The deployment goal is to migrate the ASL isolated sign recognition model trained on the PC to a Raspberry Pi environment. The Raspberry Pi version should support camera capture, MediaPipe landmark extraction, landmark feature preprocessing, ONNX Runtime inference, and recognition result output.
 
 ## Technical Flow
 
 ```text
 Camera image
 -> MediaPipe Holistic extracts 543 landmarks
--> Restore Kaggle order [T, 543, 3]
+-> Assemble the [T, 543, 3] landmark sequence
 -> Select LIP / HANDS / NOSE / EYES landmarks
 -> Build [max_len, 708] features with x,y + dx + dx2
 -> ONNX Runtime inference
@@ -30,7 +30,7 @@ The training side uses PyTorch. Raspberry Pi deployment uses ONNX Runtime to avo
 
 ## Why Recording-Based Recognition
 
-The Kaggle task is isolated sign classification, so a short recorded action is a natural input unit. Raspberry Pi compute is limited, and MediaPipe Holistic can be expensive. Recording-based recognition avoids the heavier cost and ambiguity of continuous real-time sliding-window recognition.
+The target scenario is isolated sign classification, so a short recorded action is a natural input unit. Raspberry Pi compute is limited, and MediaPipe Holistic can be expensive. Recording-based recognition avoids the heavier cost and ambiguity of continuous real-time sliding-window recognition.
 
 ## CSI Camera Notes
 

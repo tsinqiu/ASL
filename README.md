@@ -1,6 +1,6 @@
 # ASL Isolated Sign Raspberry Pi Deployment
 
-This branch is a clean deployment branch for running the Kaggle Google Isolated Sign Language Recognition model on Raspberry Pi / Linux ARM.
+This branch is a clean deployment branch for running an ASL isolated sign recognition model on Raspberry Pi / Linux ARM.
 
 The model recognizes ASL isolated signs. Chinese text, when shown, is only a display-time meaning for the English ASL label. It is not Chinese Sign Language recognition, and it is not continuous sign language translation.
 
@@ -79,8 +79,8 @@ Controls:
 ```text
 Camera image
 -> MediaPipe Holistic landmarks
--> restore Kaggle [T, 543, 3] landmark order
--> runtime first-place-style preprocessing to [max_len, 708]
+-> assemble the [T, 543, 3] landmark sequence
+-> runtime ASL landmark feature preprocessing to [max_len, 708]
 -> ONNX Runtime inference
 -> CLI top1/top5 ASL label output with optional Chinese meaning
 ```

@@ -1,13 +1,13 @@
 # Raspberry Pi ASL Isolated Sign Deployment
 
-This directory is a clean Raspberry Pi / Linux ARM deployment package for the Kaggle Google Isolated Sign Language Recognition model.
+This directory is a clean Raspberry Pi / Linux ARM deployment package for an ASL isolated sign recognition model.
 
 The system recognizes ASL isolated signs. Chinese text is only an English ASL label meaning shown for readability; it is not Chinese sign language recognition and it is not continuous sign language translation.
 
 ## Directory Contents
 
 - `realtime_asl_raspi.py`: camera recording demo with ONNX Runtime inference
-- `preprocess_runtime.py`: lightweight first-place-style runtime preprocessing, no pandas and no parquet
+- `preprocess_runtime.py`: lightweight ASL landmark runtime preprocessing, no pandas and no parquet
 - `label_utils.py`: label and Chinese meaning loading helpers
 - `labels.json`: class index to English ASL sign mapping
 - `asl_label_zh_map.json`: optional English ASL sign to Chinese meaning mapping
@@ -34,7 +34,7 @@ The Raspberry Pi does not need the `.pt` checkpoint or training code. It only ne
 
 ## 2. Prepare Labels
 
-`labels.json` is already included in this deployment directory. It is the reverse mapping of Kaggle `sign_to_prediction_index_map.json`:
+`labels.json` is already included in this deployment directory. It maps model output class indices to English ASL labels:
 
 ```json
 {
@@ -130,7 +130,7 @@ python realtime_asl_raspi.py --model model.onnx --camera 0 --max-len 128 --media
 
 ## 7. Project Boundary
 
-- The model recognizes ASL isolated signs from the Kaggle dataset.
+- The model recognizes ASL isolated signs.
 - Chinese meanings are only display-time label explanations.
 - Chinese meanings are not used for training.
 - This is not a Chinese Sign Language dataset/model.

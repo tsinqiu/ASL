@@ -142,7 +142,7 @@ def landmarks_to_array(landmarks_obj: Any, count: int) -> np.ndarray:
     return out
 
 
-def results_to_kaggle_frame(results: Any) -> np.ndarray:
+def results_to_landmark_frame(results: Any) -> np.ndarray:
     full = np.full((ROWS_PER_FRAME, 3), np.nan, dtype=np.float32)
     source_names = {
         "face": ("face_landmarks",),
@@ -234,7 +234,7 @@ class HolisticExtractor:
             results = self.model.detect(image)
         else:
             results = self.model.process(frame_rgb)
-        return results_to_kaggle_frame(results)
+        return results_to_landmark_frame(results)
 
 
 def load_onnx_session(model_path: Path) -> Any:
