@@ -37,8 +37,29 @@ def resolve_path(path: str | Path, base_dir: Path) -> Path:
     return resolved if resolved.is_absolute() else base_dir / resolved
 
 
-def apply_camera_fixes(frame_rgb: np.ndarray, rotate_180: bool, swap_r_g: bool) -> np.ndarray:
-    fixed = frame_rgb
+def reorder_channels(frame: np.ndarray, input_order: str) -> np.ndarray:
+    order = input_order.lower()
+    channel_orders = {
+        "rgb": (0, 1, 2),
+        "bgr": (2, 1, 0),
+        "gbr": (2, 0, 1),
+        "grb": (1, 0, 2),
+        "brg": (1, 2, 0),
+        "rbg": (0, 2, 1),
+    }
+    if order not in channel_orders:
+        valid = ", ".join(sorted(channel_orders))
+        raise ValueError(f"camera_color_order must be one of: {valid}")
+    return frame[..., channel_orders[order]]
+
+
+def apply_camera_fixes(
+    frame_rgb: np.ndarray,
+    rotate_180: bool,
+    swap_r_g: bool,
+    camera_color_order: str,
+) -> np.ndarray:
+    fixed = reorder_channels(frame_rgb, camera_color_order)
     if rotate_180:
         fixed = np.rot90(fixed, 2)
     if swap_r_g:
@@ -293,6 +314,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-rotate-180", action="store_false", dest="rotate_180")
     parser.add_argument("--swap-r-g", action="store_true", default=None)
     parser.add_argument("--no-swap-r-g", action="store_false", dest="swap_r_g")
+    parser.add_argument("--camera-color-order", choices=("rgb", "bgr", "gbr", "grb", "brg", "rbg"), default=None)
     parser.add_argument("--max-len", type=int, default=None)
     parser.add_argument("--labels", type=Path, default=None)
     parser.add_argument("--zh-map", type=Path, default=None)
@@ -314,6 +336,7 @@ def main() -> None:
     camera_height = int(config.get("camera_height", 480) or 0)
     rotate_180 = bool(config.get("rotate_180", False) if args.rotate_180 is None else args.rotate_180)
     swap_r_g = bool(config.get("swap_r_g", False) if args.swap_r_g is None else args.swap_r_g)
+    camera_color_order = str(args.camera_color_order or config.get("camera_color_order", "rgb"))
     max_len = int(args.max_len if args.max_len is not None else config.get("max_len", 64))
     topk = int(args.topk if args.topk is not None else config.get("topk", 5))
     fps_limit = float(config.get("record_fps_limit", 10) or 0)
@@ -335,13 +358,21 @@ def main() -> None:
 
     print("Raspberry Pi ASL isolated sign demo")
     print("r: start recording, s: stop and recognize, q: quit")
-    print(f"camera_backend={camera_backend} rotate_180={rotate_180} swap_r_g={swap_r_g}")
+    print(
+        f"camera_backend={camera_backend} rotate_180={rotate_180} "
+        f"camera_color_order={camera_color_order} swap_r_g={swap_r_g}"
+    )
     print("The Chinese text is only a meaning for the ASL English label, not Chinese Sign Language recognition.")
 
     try:
         with HolisticExtractor(task_path=task_path) as extractor:
             while True:
-                frame_rgb = apply_camera_fixes(camera.read_rgb(), rotate_180=rotate_180, swap_r_g=swap_r_g)
+                frame_rgb = apply_camera_fixes(
+                    camera.read_rgb(),
+                    rotate_180=rotate_180,
+                    swap_r_g=swap_r_g,
+                    camera_color_order=camera_color_order,
+                )
 
                 if recording:
                     now = time.monotonic()

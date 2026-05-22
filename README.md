@@ -66,7 +66,7 @@ pip install -r requirements-raspi.txt
 python realtime_asl_raspi.py --model model.onnx --camera-backend picamera2 --camera 0 --max-len 128
 ```
 
-The deployment config defaults to `max_len=128` and the observed CSI camera corrections: `rotate_180=true` and `swap_r_g=true`.
+The deployment config defaults to `max_len=128` and the observed CSI camera corrections: `rotate_180=true` and `camera_color_order=bgr`.
 
 Controls:
 

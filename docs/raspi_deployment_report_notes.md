@@ -34,7 +34,7 @@ The target scenario is isolated sign classification, so a short recorded action 
 
 ## CSI Camera Notes
 
-The Raspberry Pi deployment uses the CSI camera through Picamera2 by default. In the tested hardware setup, the captured frame requires a 180 degree rotation and a red/green channel swap before MediaPipe landmark extraction. These corrections are configured in `raspi_deploy/config.json` as `rotate_180=true` and `swap_r_g=true`.
+The Raspberry Pi deployment uses the CSI camera through Picamera2 by default. In the tested hardware setup, the captured frame requires a 180 degree rotation and BGR-to-RGB channel correction before MediaPipe landmark extraction. These corrections are configured in `raspi_deploy/config.json` as `rotate_180=true` and `camera_color_order=bgr`.
 
 ## Runtime Files
 

@@ -92,14 +92,15 @@ The default `config.json` is set for the CSI camera path:
   "max_len": 128,
   "input_dim": 708,
   "rotate_180": true,
-  "swap_r_g": true
+  "camera_color_order": "bgr",
+  "swap_r_g": false
 }
 ```
 
-These defaults match the observed hardware setup where the CSI camera image needs a 180 degree rotation and red/green channel swap before landmark extraction. For a USB camera or PC-style OpenCV camera, use:
+These defaults match the observed hardware setup where the CSI camera image needs a 180 degree rotation and BGR-to-RGB channel correction before landmark extraction. For a USB camera or PC-style OpenCV camera, use:
 
 ```bash
-python realtime_asl_raspi.py --model model.onnx --camera-backend opencv --camera 0 --max-len 128 --no-rotate-180 --no-swap-r-g
+python realtime_asl_raspi.py --model model.onnx --camera-backend opencv --camera 0 --max-len 128 --no-rotate-180 --camera-color-order rgb --no-swap-r-g
 ```
 
 Controls:
